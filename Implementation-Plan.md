@@ -30,10 +30,10 @@ The complete plan is divided into **THREE PARTS** for easier navigation:
 # COMPREHENSIVE IMPLEMENTATION PLAN: Shia Islamic RAG Chatbot
 ## Production-Grade Architecture & Complete Development Blueprint
 
-**Version:** 2.0  
-**Last Updated:** October 2025  
-**Target Implementation:** Q1-Q2 2026  
-**Primary Language:** Persian (Farsi)  
+**Version:** 3.0 (UPDATED)
+**Last Updated:** October 2025
+**Target Implementation:** Q1-Q2 2026
+**Primary Language:** Persian (Farsi)
 **Status:** Ready for Implementation
 
 ---
@@ -50,51 +50,77 @@ The complete plan is divided into **THREE PARTS** for easier navigation:
 8. [Authentication & User Management](#authentication--user-management)
 9. [Multi-Tier User System](#multi-tier-user-system)
 10. [Token Tracking System](#token-tracking-system)
-11. [RAG Pipeline](#rag-pipeline)
-12. [Specialized Features](#specialized-features)
+11. [RAG Pipeline with Chonkie](#rag-pipeline-with-chonkie)
+12. [Specialized Tools & Features](#specialized-tools--features)
 13. [Admin Dashboard](#admin-dashboard)
-14. [API for External Companies](#api-for-external-companies)
-15. [Ticket Support System](#ticket-support-system)
-16. [Leaderboard Systems](#leaderboard-systems)
-17. [Rejal & Hadith Chain Validation](#rejal--hadith-chain-validation)
-18. [Backup & Recovery](#backup--recovery)
-19. [Environment & Deployment](#environment--deployment)
-20. [Testing Strategy](#testing-strategy)
-21. [Security & Compliance](#security--compliance)
-22. [Performance Optimization](#performance-optimization)
-23. [Monitoring & Observability](#monitoring--observability)
-24. [Cost Management](#cost-management)
-25. [Implementation Roadmap](#implementation-roadmap)
-26. [Pre-Deployment Checklist](#pre-deployment-checklist)
+14. [Super-Admin API Key Management](#super-admin-api-key-management)
+15. [API for External Companies](#api-for-external-companies)
+16. [Ticket Support System](#ticket-support-system)
+17. [Leaderboard Systems](#leaderboard-systems)
+18. [Rejal & Hadith Chain Validation](#rejal--hadith-chain-validation)
+19. [ASR (Speech-to-Text) Integration](#asr-speech-to-text-integration)
+20. [Logging System (Environment-Based)](#logging-system-environment-based)
+21. [Backup & Recovery](#backup--recovery)
+22. [Environment & Deployment](#environment--deployment)
+23. [Testing Strategy](#testing-strategy)
+24. [Security & Compliance](#security--compliance)
+25. [Performance Optimization](#performance-optimization)
+26. [Monitoring & Observability](#monitoring--observability)
+27. [Cost Management](#cost-management)
+28. [Implementation Roadmap](#implementation-roadmap)
+29. [Pre-Deployment Checklist](#pre-deployment-checklist)
 
 ---
 
 ## EXECUTIVE SUMMARY
 
 ### Purpose
-Build a production-grade, intelligent Shia Islamic chatbot using RAG (Retrieval-Augmented Generation) technology with advanced features including multi-hop reasoning, specialized Islamic scholarship tools, comprehensive admin controls, and external API capabilities.
+Build a production-grade, intelligent **comprehensive Shia Islamic chatbot** using RAG (Retrieval-Augmented Generation) technology with advanced features including multi-hop reasoning, specialized Islamic scholarship tools, comprehensive admin controls, and external API capabilities.
+
+**IMPORTANT**: This chatbot is designed as a **general-purpose Islamic knowledge system**, covering ALL aspects of Shia Islam including but NOT limited to:
+- **Aqidah** (Theology & Beliefs)
+- **Fiqh** (Jurisprudence) & Ahkam (Rulings) - with Marja-specific guidance
+- **Tafsir** (Quranic Interpretation & Commentary)
+- **History** (Islamic & Shia History, Events, Figures)
+- **Hadith** (Prophetic & Imams' Traditions)
+- **Akhlaq** (Ethics & Morality)
+- **Doubts Resolution** (Addressing Misconceptions & Questions)
+- **Rejal** (Hadith Narrator Analysis)
+- **Du'a & Supplications**
+- **Biography** (Lives of Prophets, Imams, Scholars)
+- **Contemporary Issues** (Modern-day Religious Guidance)
+
+While Marja rulings and Fiqh are important components, they represent only ONE aspect of this comprehensive system.
 
 ### Key Characteristics
 - **Primary Language**: Persian (Farsi) - with Arabic, English, and Urdu support
+- **Backend Messages**: All standardized in English (frontend handles i18n/translation)
 - **Architecture**: LangGraph-based multi-agent orchestration
 - **Memory**: mem0 integration for intelligent, persistent memory
 - **Guardrails**: NeMo Guardrails for LLM-based safety checks (no GPU required)
 - **Vector DB**: Qdrant (with abstraction layer for future migration)
+- **Chunking**: Chonkie library for intelligent, semantic text segmentation
+- **ASR Support**: Automatic Speech Recognition for voice/audio file processing
 - **Deployment**: Docker Compose with support for single-instance and multi-instance infrastructure
 - **Multi-hop Intelligence**: Advanced reasoning for complex Islamic questions
 - **External API**: Expose services to third-party companies
 
 ### Core Differentiators
-1. Specialized Shia Islamic knowledge with Marja-specific rulings
-2. Rejal (narrator chain) validation and visualization
-3. Professional hadith authentication tracking
-4. Multi-tier admin system with role-based permissions
-5. Comprehensive ticket support system
-6. Dual leaderboards (admin performance & user feedback quality)
-7. Chunking approval workflow for content quality
-8. HuggingFace-based backup system
-9. External API for third-party integration
-10. Test user environment with full separation
+1. **Comprehensive Islamic Knowledge** - Not limited to Fiqh/Ahkam, covers ALL religious domains
+2. **Marja-Specific Rulings** - Direct integration with official Marja websites (NOT RAG-based for Ahkam)
+3. **Rejal (narrator chain) validation and visualization**
+4. **Professional hadith authentication and lookup**
+5. **Multi-tier admin system with role-based permissions**
+6. **Super-admin API key management dashboard** for third-party service control
+7. **Comprehensive ticket support system**
+8. **Dual leaderboards** (admin performance & user feedback quality)
+9. **Chonkie-powered intelligent chunking** with admin approval workflow
+10. **ASR (Speech-to-Text)** for voice/audio file support
+11. **Cross-platform authentication** (Email/Google OAuth with account linking)
+12. **Environment-aware multi-level logging** (dev/test/prod)
+13. **HuggingFace-based backup system**
+14. **External API for third-party integration**
+15. **Test user environment with full separation**
 
 ---
 
@@ -364,6 +390,53 @@ langfuse:
   integration: "langraph"
 ```
 
+### Chunking & Text Processing
+```yaml
+chonkie:
+  package: "chonkie>=1.4.0"
+  repository: "https://github.com/chonkie-inc/chonkie"
+  docs: "https://docs.chonkie.ai"
+  features:
+    - semantic_chunking  # Context-aware chunking
+    - token_chunking  # Token-based splitting
+    - sentence_chunking  # Sentence-based splitting
+    - multilingual_support  # 56+ languages including Persian & Arabic
+    - custom_chunkers  # Extensible chunking strategies
+  integration: "Direct API"
+  use_cases:
+    - automatic_document_chunking
+    - admin_assisted_chunking  # With manual review UI
+    - optimized_for_rag
+```
+
+### ASR (Automatic Speech Recognition)
+```yaml
+asr_providers:
+  primary: "google_speech_to_text"  # Google Cloud Speech-to-Text
+  secondary: "openai_whisper"  # Whisper API
+  local_option: "whisper_local"  # Local Whisper model (optional)
+
+supported_formats:
+  - mp3
+  - wav
+  - m4a
+  - ogg
+  - flac
+  - webm
+
+supported_languages:
+  - fa  # Persian/Farsi
+  - ar  # Arabic
+  - en  # English
+  - ur  # Urdu
+
+features:
+  - automatic_language_detection
+  - speaker_diarization  # Optional
+  - punctuation_restoration
+  - timestamps  # Word-level or phrase-level
+```
+
 ### Development Tools
 ```yaml
 dependency_management:
@@ -533,6 +606,32 @@ CREATE TABLE user_sessions (
 CREATE INDEX idx_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX idx_sessions_token ON user_sessions(session_token);
 CREATE INDEX idx_sessions_expires_at ON user_sessions(expires_at);
+
+-- Account linking for cross-platform authentication (Email <-> Google OAuth)
+-- Allows users who signed up with one method to log in with another using same email
+CREATE TABLE linked_auth_providers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    -- Provider details
+    provider_type VARCHAR(50) NOT NULL,  -- 'email', 'google', 'apple', 'github', etc.
+    provider_user_id VARCHAR(255),  -- Provider-specific user ID (e.g., Google ID)
+    provider_email VARCHAR(255),  -- Email from provider
+
+    -- Link status
+    is_primary BOOLEAN DEFAULT FALSE,  -- The original sign-up method
+    is_verified BOOLEAN DEFAULT FALSE,
+
+    -- Metadata
+    linked_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP WITH TIME ZONE,
+
+    UNIQUE(user_id, provider_type)
+);
+
+CREATE INDEX idx_linked_providers_user_id ON linked_auth_providers(user_id);
+CREATE INDEX idx_linked_providers_type ON linked_auth_providers(provider_type);
+CREATE INDEX idx_linked_providers_email ON linked_auth_providers(provider_email);
 
 -- User settings and preferences
 CREATE TABLE user_settings (
@@ -965,6 +1064,118 @@ CREATE TABLE message_citations (
 CREATE INDEX idx_citations_message_id ON message_citations(message_id);
 CREATE INDEX idx_citations_document_id ON message_citations(document_id);
 CREATE INDEX idx_citations_chunk_id ON message_citations(chunk_id);
+
+-- ================================================================
+-- MARJA OFFICIAL WEBSITES & AHKAM SOURCES
+-- ================================================================
+-- CRITICAL: For Ahkam (religious rulings), we DO NOT use RAG retrieval.
+-- Instead, we fetch directly from official Marja websites with maximum citations.
+-- This table allows admins to configure and manage these official sources.
+
+CREATE TABLE marja_official_sources (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Marja identification
+    marja_name VARCHAR(255) NOT NULL,  -- 'Sistani', 'Khamenei', 'Makarem Shirazi', etc.
+    marja_name_arabic VARCHAR(255),
+    marja_name_persian VARCHAR(255),
+    marja_name_english VARCHAR(255),
+
+    -- Official website information
+    official_website_url VARCHAR(500) NOT NULL,
+    website_language VARCHAR(10),  -- 'fa', 'ar', 'en', 'ur'
+    website_type VARCHAR(50),  -- 'primary', 'secondary', 'mobile', 'api'
+
+    -- API or Scraping configuration
+    has_official_api BOOLEAN DEFAULT FALSE,
+    api_endpoint VARCHAR(500),
+    api_key_required BOOLEAN DEFAULT FALSE,
+    api_documentation_url VARCHAR(500),
+
+    -- Web scraping configuration (if no API available)
+    scraping_enabled BOOLEAN DEFAULT TRUE,
+    scraping_config JSONB,  -- {selectors, url_patterns, rate_limits, etc.}
+
+    -- Fatwa/Ahkam specific URLs
+    ahkam_section_url VARCHAR(500),  -- Direct link to Ahkam/Fatwa section
+    search_url VARCHAR(500),  -- Search endpoint URL
+    search_method VARCHAR(10) DEFAULT 'GET',  -- 'GET', 'POST'
+    search_parameters JSONB,  -- {query_param: 'q', filters: {...}}
+
+    -- Content structure
+    response_format VARCHAR(50),  -- 'html', 'json', 'xml', 'text'
+    content_selectors JSONB,  -- {title: '.fatwa-title', content: '.fatwa-body', ...}
+
+    -- Reliability & Status
+    is_active BOOLEAN DEFAULT TRUE,
+    is_verified BOOLEAN DEFAULT FALSE,  -- Verified by scholar/admin
+    last_verified_at TIMESTAMP WITH TIME ZONE,
+    last_successful_fetch_at TIMESTAMP WITH TIME ZONE,
+
+    -- Rate limiting (respect website policies)
+    requests_per_minute INTEGER DEFAULT 10,
+    requests_per_hour INTEGER DEFAULT 100,
+
+    -- Caching policy
+    cache_duration_hours INTEGER DEFAULT 24,  -- How long to cache responses
+
+    -- Contact information
+    contact_email VARCHAR(255),
+    contact_phone VARCHAR(50),
+
+    -- Metadata
+    notes TEXT,
+    additional_metadata JSONB DEFAULT '{}',
+
+    -- Admin tracking
+    added_by UUID REFERENCES system_admins(id),
+    verified_by UUID REFERENCES system_admins(id),
+
+    -- Timestamps
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_marja_sources_name ON marja_official_sources(marja_name);
+CREATE INDEX idx_marja_sources_active ON marja_official_sources(is_active);
+CREATE INDEX idx_marja_sources_language ON marja_official_sources(website_language);
+
+-- Tracking Ahkam fetches from official sources
+CREATE TABLE ahkam_fetch_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    marja_source_id UUID NOT NULL REFERENCES marja_official_sources(id) ON DELETE CASCADE,
+
+    -- Request details
+    question_text TEXT NOT NULL,
+    question_category VARCHAR(100),  -- 'prayer', 'fasting', 'zakat', etc.
+
+    -- Response details
+    fetch_status VARCHAR(50),  -- 'success', 'failed', 'no_result', 'rate_limited'
+    response_found BOOLEAN DEFAULT FALSE,
+    response_text TEXT,
+    response_url VARCHAR(500),  -- Direct link to the ruling on official website
+
+    -- Citation information
+    citation_title VARCHAR(500),
+    citation_reference VARCHAR(500),  -- Book/section reference if available
+
+    -- Performance
+    fetch_duration_ms INTEGER,
+    was_cached BOOLEAN DEFAULT FALSE,
+
+    -- Quality
+    confidence_score DECIMAL(3, 2),  -- How confident are we in this result
+
+    -- Error handling
+    error_message TEXT,
+
+    -- Timestamps
+    fetched_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_ahkam_fetch_source ON ahkam_fetch_log(marja_source_id);
+CREATE INDEX idx_ahkam_fetch_status ON ahkam_fetch_log(fetch_status);
+CREATE INDEX idx_ahkam_fetch_date ON ahkam_fetch_log(fetched_at);
 
 -- ================================================================
 -- REJAL & HADITH CHAIN VALIDATION (NEW FEATURE)
@@ -1484,42 +1695,100 @@ CREATE INDEX idx_feed_executions_started_at ON data_feed_executions(started_at);
 
 CREATE TABLE external_api_clients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
+
     -- Client identification
     client_name VARCHAR(255) NOT NULL,
     client_company VARCHAR(255),
     client_email VARCHAR(255) NOT NULL,
-    
+    client_contact_person VARCHAR(255),
+    client_phone VARCHAR(50),
+
     -- API credentials
     api_key VARCHAR(255) UNIQUE NOT NULL,  -- Hashed API key
     api_secret VARCHAR(255),  -- Hashed secret for additional security
-    
-    -- Access control
-    is_active BOOLEAN DEFAULT TRUE,
+
+    -- Access control & Status (SUPER-ADMIN MANAGEMENT)
+    status VARCHAR(50) DEFAULT 'active',  -- 'active', 'suspended', 'banned', 'pending_approval', 'expired'
+    is_active BOOLEAN DEFAULT TRUE,  -- Quick toggle
     allowed_endpoints JSONB DEFAULT '[]',  -- List of endpoints they can access
-    rate_limit_tier VARCHAR(50) DEFAULT 'basic',  -- 'basic', 'standard', 'premium', 'enterprise'
-    
-    -- Usage limits
+    blocked_endpoints JSONB DEFAULT '[]',  -- Explicitly blocked endpoints
+
+    -- Rate limiting configuration (GRANULAR CONTROL)
+    rate_limit_tier VARCHAR(50) DEFAULT 'basic',  -- 'basic', 'standard', 'premium', 'enterprise', 'custom'
+
+    -- Custom rate limits (if tier = 'custom')
+    custom_requests_per_minute INTEGER,
+    custom_requests_per_hour INTEGER,
+    custom_requests_per_day INTEGER,
+    custom_requests_per_month INTEGER,
+    custom_tokens_per_request INTEGER,
+    custom_concurrent_requests INTEGER DEFAULT 5,
+
+    -- Usage limits & tracking
     monthly_request_limit INTEGER,
     monthly_token_limit INTEGER,
+    daily_request_limit INTEGER,
+    daily_token_limit INTEGER,
+
     current_month_requests INTEGER DEFAULT 0,
     current_month_tokens INTEGER DEFAULT 0,
-    
-    -- IP whitelisting
-    allowed_ips JSONB DEFAULT '[]',  -- List of allowed IP addresses
-    
+    current_day_requests INTEGER DEFAULT 0,
+    current_day_tokens INTEGER DEFAULT 0,
+
+    -- Cost tracking
+    cost_per_token DECIMAL(10, 8),  -- Custom pricing
+    current_month_cost_usd DECIMAL(10, 4) DEFAULT 0,
+    total_cost_usd DECIMAL(12, 4) DEFAULT 0,
+
+    -- IP & Security
+    allowed_ips JSONB DEFAULT '[]',  -- Whitelist of allowed IP addresses
+    blocked_ips JSONB DEFAULT '[]',  -- Blacklist of blocked IPs
+    require_ip_whitelist BOOLEAN DEFAULT FALSE,
+
     -- Billing
     billing_email VARCHAR(255),
-    plan_type VARCHAR(50),  -- 'free', 'pay_as_you_go', 'subscription'
-    
+    plan_type VARCHAR(50),  -- 'free', 'pay_as_you_go', 'subscription', 'enterprise'
+    payment_status VARCHAR(50) DEFAULT 'current',  -- 'current', 'overdue', 'suspended'
+
+    -- Moderation & Control (SUPER-ADMIN ACTIONS)
+    is_banned BOOLEAN DEFAULT FALSE,
+    ban_reason TEXT,
+    banned_at TIMESTAMP WITH TIME ZONE,
+    banned_by UUID REFERENCES system_admins(id),
+
+    is_suspended BOOLEAN DEFAULT FALSE,
+    suspension_reason TEXT,
+    suspension_start TIMESTAMP WITH TIME ZONE,
+    suspension_end TIMESTAMP WITH TIME ZONE,  -- NULL for indefinite
+    suspended_by UUID REFERENCES system_admins(id),
+
+    -- Permissions & Features
+    permissions JSONB DEFAULT '{}',  -- {allow_web_search: true, allow_tool_calls: false, ...}
+    enabled_features JSONB DEFAULT '[]',  -- ['chat', 'embeddings', 'search']
+
+    -- Alerts & Monitoring
+    alert_on_high_usage BOOLEAN DEFAULT TRUE,
+    alert_threshold_percentage INTEGER DEFAULT 80,  -- Alert at 80% of limit
+    admin_notes TEXT,  -- Super-admin internal notes
+
+    -- Audit trail
+    created_by UUID REFERENCES system_admins(id),  -- Which admin created this client
+    last_modified_by UUID REFERENCES system_admins(id),
+
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP WITH TIME ZONE,
-    last_used_at TIMESTAMP WITH TIME ZONE
+    last_used_at TIMESTAMP WITH TIME ZONE,
+    last_reset_at TIMESTAMP WITH TIME ZONE  -- Last time usage counters were reset
 );
 
 CREATE INDEX idx_external_clients_api_key ON external_api_clients(api_key);
 CREATE INDEX idx_external_clients_is_active ON external_api_clients(is_active);
+CREATE INDEX idx_external_clients_status ON external_api_clients(status);
+CREATE INDEX idx_external_clients_is_banned ON external_api_clients(is_banned);
+CREATE INDEX idx_external_clients_is_suspended ON external_api_clients(is_suspended);
+CREATE INDEX idx_external_clients_company ON external_api_clients(client_company);
 
 -- External API usage tracking
 CREATE TABLE external_api_usage (
