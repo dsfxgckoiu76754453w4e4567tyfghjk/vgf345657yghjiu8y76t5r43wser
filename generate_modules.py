@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-Script to generate modular implementation documentation from original files.
-Splits Implementation-Plan.md and Implementation-Plan-ADDENDUM-v3.0.md into 20 focused modules.
+Script to generate modular implementation documentation.
+
+NOTE: Original source files (Implementation-Plan.md and Implementation-Plan-ADDENDUM-v3.0.md)
+have been removed to avoid confusion. All content is preserved in the modular structure.
+
+This script is kept for reference and can be used if you need to regenerate modules
+from backup copies of the original files.
 """
 
 import os
@@ -15,6 +20,11 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def read_file(filepath):
     """Read file content"""
+    if not os.path.exists(filepath):
+        print(f"⚠️  File not found: {filepath}")
+        print(f"    Original files have been removed. All content is in docs/implementation/")
+        return ""
+
     with open(filepath, 'r', encoding='utf-8') as f:
         return f.read()
 
@@ -25,13 +35,33 @@ def write_module(filename, content):
         f.write(content)
     print(f"✅ Created: {filename}")
 
-# Read source files
-print("📖 Reading source files...")
-impl_plan = read_file("Implementation-Plan.md")
-addendum = read_file("Implementation-Plan-ADDENDUM-v3.0.md")
+# Read source files (if they exist - they've been removed to avoid duplication)
+print("📖 Checking for source files...")
+print("⚠️  NOTE: Original monolithic files have been removed.")
+print("    All content is preserved in modular structure at docs/implementation/")
+print()
 
-print(f"   Implementation-Plan.md: {len(impl_plan)} characters")
-print(f"   Implementation-Plan-ADDENDUM-v3.0.md: {len(addendum)} characters")
+# Check if files exist
+if os.path.exists("Implementation-Plan.md"):
+    impl_plan = read_file("Implementation-Plan.md")
+    print(f"   Implementation-Plan.md: {len(impl_plan)} characters")
+else:
+    print("   Implementation-Plan.md: REMOVED (content in modular structure)")
+    impl_plan = ""
+
+if os.path.exists("Implementation-Plan-ADDENDUM-v3.0.md"):
+    addendum = read_file("Implementation-Plan-ADDENDUM-v3.0.md")
+    print(f"   Implementation-Plan-ADDENDUM-v3.0.md: {len(addendum)} characters")
+else:
+    print("   Implementation-Plan-ADDENDUM-v3.0.md: REMOVED (content in modular structure)")
+    addendum = ""
+
+if not impl_plan and not addendum:
+    print()
+    print("✅ All documentation is now in modular format at docs/implementation/")
+    print("   No regeneration needed. Files are maintained directly as modules.")
+    exit(0)
+
 print()
 
 # Split implementation plan into lines for easier extraction
