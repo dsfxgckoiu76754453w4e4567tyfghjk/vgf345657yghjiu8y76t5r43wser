@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import admin, auth, documents, leaderboard, support, tools
+from app.api.v1 import admin, asr, auth, documents, external_api, leaderboard, support, tools
 
 api_router = APIRouter()
 
@@ -13,6 +13,8 @@ api_router.include_router(tools.router, prefix="/tools", tags=["Specialized Tool
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin & Moderation"])
 api_router.include_router(support.router, prefix="/support", tags=["Support Tickets"])
 api_router.include_router(leaderboard.router, prefix="/leaderboard", tags=["Leaderboards"])
+api_router.include_router(external_api.router, prefix="/external-api", tags=["External API Integration"])
+api_router.include_router(asr.router, prefix="/asr", tags=["Speech-to-Text (ASR)"])
 
 # TODO: Add more routers as they are implemented
 # api_router.include_router(users.router, prefix="/users", tags=["Users"])
