@@ -128,11 +128,10 @@ async def global_exception_handler(request, exc: Exception) -> JSONResponse:
         )
 
 
-# TODO: Add routers
-# from app.api.v1 import auth, users, chat
-# app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
-# app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
-# app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
+# Include API routers
+from app.api.v1 import api_router
+
+app.include_router(api_router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn

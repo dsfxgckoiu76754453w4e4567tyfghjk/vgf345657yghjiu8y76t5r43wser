@@ -12,6 +12,11 @@ from alembic import context
 # Import all models to ensure they're registered
 from app.db.base import Base
 from app.models.user import User, OTPCode, UserSession, LinkedAuthProvider, UserSettings
+from app.models.admin import SystemAdmin, AdminTask
+from app.models.chat import Conversation, Message, MessageEditHistory, MessageFeedback
+from app.models.document import Document, DocumentChunk, DocumentEmbedding
+from app.models.marja import MarjaOfficialSource, AhkamFetchLog
+from app.models.external_api import ExternalAPIClient, APIUsageLog
 
 # this is the Alembic Config object
 config = context.config
