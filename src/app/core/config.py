@@ -1,7 +1,7 @@
 """Application configuration management."""
 
 from typing import Literal
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,12 +25,18 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
 
-    # Database
-    database_url: str = Field(
-        default="postgresql+asyncpg://postgres:postgres@localhost:5432/shia_chatbot"
-    )
+    # Database - Separate Parameters (recommended for production)
+    database_host: str = Field(default="localhost")
+    database_port: int = Field(default=5433)
+    database_user: str = Field(default="postgres")
+    database_password: str = Field(default="postgres")
+    database_name: str = Field(default="shia_chatbot")
+    database_driver: str = Field(default="postgresql+asyncpg")
     database_pool_size: int = Field(default=20)
     database_max_overflow: int = Field(default=10)
+
+    # Database - Legacy URL support (optional, will be constructed if not provided)
+    database_url: str | None = Field(default=None)
 
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0")
@@ -136,6 +142,63 @@ class Settings(BaseSettings):
         """Parse comma-separated CORS origins."""
         return [origin.strip() for origin in v.split(",")]
 
+    @field_validator("debug", mode="before")
+    @classmethod
+    def set_debug_from_environment(cls, v, info):
+        """Automatically set debug based on environment if not explicitly set."""
+        if v is None:
+            environment = info.data.get("environment", "dev")
+            return environment == "dev"
+        return v
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def set_log_level_from_environment(cls, v, info):
+        """Automatically set log level based on environment if not explicitly set."""
+        if v is None:
+            environment = info.data.get("environment", "dev")
+            return {"dev": "DEBUG", "test": "INFO", "prod": "WARNING"}[environment]
+        return v
+
+    @field_validator("log_format", mode="before")
+    @classmethod
+    def set_log_format_from_environment(cls, v, info):
+        """Automatically set log format based on environment if not explicitly set."""
+        if v is None:
+            environment = info.data.get("environment", "dev")
+            return "colored" if environment == "dev" else "json"
+        return v
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self):
+        """Validate that production environments have secure secrets."""
+        if self.environment == "prod":
+            # Check JWT secret
+            if self.jwt_secret_key == "change-in-production":
+                raise ValueError(
+                    "JWT_SECRET_KEY must be changed in production environment"
+                )
+
+            # Warn about debug mode in production
+            if self.debug:
+                import warnings
+                warnings.warn(
+                    "DEBUG mode is enabled in production. This is not recommended.",
+                    UserWarning
+                )
+
+        return self
+
+    @model_validator(mode="after")
+    def build_database_url(self):
+        """Build database URL from individual parameters if not provided."""
+        if self.database_url is None:
+            self.database_url = (
+                f"{self.database_driver}://{self.database_user}:{self.database_password}"
+                f"@{self.database_host}:{self.database_port}/{self.database_name}"
+            )
+        return self
+
     @property
     def is_production(self) -> bool:
         """Check if running in production."""
@@ -150,6 +213,11 @@ class Settings(BaseSettings):
     def is_test(self) -> bool:
         """Check if running in test."""
         return self.environment == "test"
+
+    @property
+    def show_docs(self) -> bool:
+        """Whether to show API documentation endpoints."""
+        return self.debug or self.environment != "prod"
 
 
 # Global settings instance
