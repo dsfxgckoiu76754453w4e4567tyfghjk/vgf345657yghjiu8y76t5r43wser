@@ -63,16 +63,110 @@ make lint
 
 # Database operations
 make db-migrate MESSAGE="add new table"
-make db-downgrade
+make db-upgrade     # Apply migrations
+make db-downgrade   # Rollback migrations
+make db-reset       # Reset database (WARNING: deletes all data)
 
 # Docker operations
-make docker-down    # Stop services
+make docker-up      # Start services
+make docker-down    # Stop services (preserves volumes)
 make docker-restart # Restart services
 make docker-logs    # View logs
+make docker-ps      # Check service status and health
+
+# Volume management (persistent storage)
+docker volume ls    # List all volumes
+docker volume inspect vgf345657yghjiu8y76t5r43wser_postgres_data
+docker volume inspect vgf345657yghjiu8y76t5r43wser_redis_data
+docker volume inspect vgf345657yghjiu8y76t5r43wser_qdrant_data
 
 # Clean up
 make clean          # Remove cache files
-make clean-all      # Remove cache + Docker resources
+make clean-all      # Remove cache + Docker resources (preserves volumes)
+```
+
+## 🗄️ Persistent Storage
+
+All data is stored in Docker named volumes for persistence:
+
+- **PostgreSQL**: `vgf345657yghjiu8y76t5r43wser_postgres_data` (database tables)
+- **Redis**: `vgf345657yghjiu8y76t5r43wser_redis_data` (cache & queues)
+- **Qdrant**: `vgf345657yghjiu8y76t5r43wser_qdrant_data` (vector embeddings)
+
+**Data persists across container restarts** - stopping and restarting services will NOT delete your data.
+
+### Backup Volumes
+
+```bash
+# Backup PostgreSQL
+docker run --rm -v vgf345657yghjiu8y76t5r43wser_postgres_data:/data -v $(pwd):/backup ubuntu tar czf /backup/postgres_backup.tar.gz /data
+
+# Backup Qdrant
+docker run --rm -v vgf345657yghjiu8y76t5r43wser_qdrant_data:/data -v $(pwd):/backup ubuntu tar czf /backup/qdrant_backup.tar.gz /data
+
+# Backup Redis
+docker run --rm -v vgf345657yghjiu8y76t5r43wser_redis_data:/data -v $(pwd):/backup ubuntu tar czf /backup/redis_backup.tar.gz /data
+```
+
+### Restore Volumes
+
+```bash
+# Restore PostgreSQL
+docker run --rm -v vgf345657yghjiu8y76t5r43wser_postgres_data:/data -v $(pwd):/backup ubuntu tar xzf /backup/postgres_backup.tar.gz -C /
+```
+
+### Complete Data Wipe (Development Only)
+
+```bash
+# ⚠️ WARNING: This deletes ALL data permanently!
+docker-compose down -v  # Stop services AND remove volumes
+docker-compose up -d    # Start fresh
+```
+
+## 🏥 Health Checks
+
+All services include health checks with automatic restart on failure:
+
+```bash
+# Check service health
+docker-compose ps
+
+# Expected output:
+# NAME                    STATUS
+# shia-chatbot-postgres   Up (healthy)
+# shia-chatbot-redis      Up (healthy)
+# shia-chatbot-qdrant     Up (healthy)
+
+# Application health check
+curl http://localhost:8000/health
+
+# Detailed health check (includes service dependencies)
+curl http://localhost:8000/health?check_services=true
+
+# Stats endpoint (dev/test only)
+curl http://localhost:8000/stats
+```
+
+### Health Check Details
+
+- **PostgreSQL**: `pg_isready` every 10s
+- **Redis**: `redis-cli ping` every 10s
+- **Qdrant**: `wget /healthz` every 10s
+- **Auto-restart**: Containers automatically restart if unhealthy
+
+### Troubleshooting Unhealthy Services
+
+```bash
+# View service logs
+docker-compose logs postgres
+docker-compose logs redis
+docker-compose logs qdrant
+
+# Restart specific service
+docker-compose restart postgres
+
+# Check if ports are already in use (common issue)
+netstat -tulpn | grep -E '5433|6379|6333'
 ```
 
 ## Next Steps

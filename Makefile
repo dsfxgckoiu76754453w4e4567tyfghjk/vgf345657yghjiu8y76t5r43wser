@@ -1,7 +1,7 @@
 # Shia Islamic Chatbot - Makefile
 # Minimal yet comprehensive build automation
 
-.PHONY: help install dev test lint clean docker-up docker-down docker-build db-migrate db-upgrade db-downgrade format security deploy
+.PHONY: help install dev test lint clean docker-up docker-down docker-build docker-ps docker-health docker-clean docker-clean-all docker-backup db-migrate db-upgrade db-downgrade format security deploy
 
 # Variables
 PYTHON := python3
@@ -67,9 +67,37 @@ docker-build: ## Build Docker image for the application
 docker-logs: ## Show logs from all Docker services
 	$(DOCKER_COMPOSE) logs -f
 
-docker-clean: ## Remove all Docker containers, volumes, and images
+docker-ps: ## Check status and health of all Docker services
+	$(DOCKER_COMPOSE) ps
+	@echo ""
+	@echo "Volume Status:"
+	@docker volume ls | grep $(APP_NAME) || echo "No volumes found"
+
+docker-health: ## Check health status of all services
+	@echo "🏥 Checking service health..."
+	@$(DOCKER_COMPOSE) ps | grep -E "healthy|unhealthy" || echo "Health checks running..."
+	@echo ""
+	@echo "Testing application health endpoint:"
+	@curl -s http://localhost:8000/health?check_services=true | python3 -m json.tool || echo "⚠️  Application not running"
+
+docker-clean: ## Remove all Docker containers and images (preserves volumes)
+	$(DOCKER_COMPOSE) down --rmi all
+	@echo "✅ Docker containers and images removed (volumes preserved)"
+
+docker-clean-all: ## Remove all Docker containers, volumes, and images (⚠️  DELETES ALL DATA!)
+	@echo "⚠️  WARNING: This will DELETE ALL DATA in volumes!"
+	@echo "Press Ctrl+C to cancel, or Enter to continue..."
+	@read confirm
 	$(DOCKER_COMPOSE) down -v --rmi all
-	@echo "✅ Docker environment cleaned"
+	@echo "✅ Docker environment completely cleaned"
+
+docker-backup: ## Backup all Docker volumes
+	@echo "📦 Creating backups..."
+	@mkdir -p backups
+	@docker run --rm -v $(APP_NAME)_postgres_data:/data -v $(PWD)/backups:/backup ubuntu tar czf /backup/postgres_$(shell date +%Y%m%d_%H%M%S).tar.gz /data
+	@docker run --rm -v $(APP_NAME)_redis_data:/data -v $(PWD)/backups:/backup ubuntu tar czf /backup/redis_$(shell date +%Y%m%d_%H%M%S).tar.gz /data
+	@docker run --rm -v $(APP_NAME)_qdrant_data:/data -v $(PWD)/backups:/backup ubuntu tar czf /backup/qdrant_$(shell date +%Y%m%d_%H%M%S).tar.gz /data
+	@echo "✅ Backups created in ./backups/"
 
 # ============================================================================
 # Database Operations
