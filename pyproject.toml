@@ -85,6 +85,7 @@ email-validator = "^2.2.0"
 tenacity = "^9.0.0"
 python-dateutil = "^2.9.0"
 pytz = "^2024.1"
+jdatetime = "^5.0.0"
 
 [tool.poetry.group.dev.dependencies]
 # Testing
