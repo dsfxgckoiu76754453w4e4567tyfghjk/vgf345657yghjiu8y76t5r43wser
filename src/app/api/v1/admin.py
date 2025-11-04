@@ -104,8 +104,8 @@ async def create_api_key(
     description="List all admin API keys (without the actual key values).",
 )
 async def list_api_keys(
-    include_expired: bool = Query(default=False, description="Include expired keys"),
     db: Annotated[AsyncSession, Depends(get_db)],
+    include_expired: bool = Query(default=False, description="Include expired keys"),
 ) -> list[APIKeyResponse]:
     """
     List all API keys.
@@ -194,11 +194,11 @@ async def revoke_api_key(
     description="List all users with filtering and pagination.",
 )
 async def list_users(
+    db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=50, ge=1, le=100, description="Items per page"),
     search_query: Optional[str] = Query(default=None, description="Search by email or name"),
     role_filter: Optional[str] = Query(default=None, description="Filter by role"),
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserListPaginatedResponse:
     """
     List all users.
@@ -390,8 +390,8 @@ async def change_user_role(
     description="Get content items pending moderation.",
 )
 async def get_pending_content(
-    limit: int = Query(default=20, ge=1, le=100, description="Maximum items to return"),
     db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(default=20, ge=1, le=100, description="Maximum items to return"),
 ) -> list[PendingContentItem]:
     """
     Get pending content.
