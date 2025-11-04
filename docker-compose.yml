@@ -59,20 +59,25 @@ services:
       retries: 5
 
   # Langfuse (Observability - Optional)
-  langfuse:
-    image: langfuse/langfuse:latest
-    container_name: shia-chatbot-langfuse
-    ports:
-      - "3001:3000"  # Using 3001 externally (3000 is used by Grafana)
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/langfuse
-      - NEXTAUTH_SECRET=changeme-in-production
-      - NEXTAUTH_URL=http://localhost:3001
-      - SALT=changeme-in-production
-    depends_on:
-      - postgres
-    networks:
-      - chatbot-network
+  # RECOMMENDED: Use Langfuse Cloud instead of self-hosting for production
+  # Sign up at: https://cloud.langfuse.com (Free tier available)
+  # To enable self-hosted Langfuse, see: docs/LANGFUSE_SETUP.md
+
+  # langfuse:
+  #   image: langfuse/langfuse:latest
+  #   container_name: shia-chatbot-langfuse
+  #   ports:
+  #     - "3001:3000"  # Using 3001 externally (3000 is used by Grafana)
+  #   environment:
+  #     - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/langfuse
+  #     - NEXTAUTH_SECRET=changeme-in-production
+  #     - NEXTAUTH_URL=http://localhost:3001
+  #     - SALT=changeme-in-production
+  #     # V3 requires ClickHouse - see docs/LANGFUSE_SETUP.md for full setup
+  #   depends_on:
+  #     - postgres
+  #   networks:
+  #     - chatbot-network
 
   # FastAPI Application (uncomment after implementation)
   # app:
