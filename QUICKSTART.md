@@ -10,22 +10,32 @@
 
 ```bash
 # 1. Install dependencies
-poetry install
+make install
+# OR: poetry install
 
 # 2. Copy environment file
 cp .env.example .env
 
-# 3. Start infrastructure
-docker-compose up -d postgres redis qdrant
+# 3. Start infrastructure services
+make docker-up
+# OR: docker-compose up -d
 
-# 4. Wait for services to start
+# 4. Wait for services to start (30 seconds)
 sleep 30
 
 # 5. Run database migrations
-poetry run alembic upgrade head
+make db-upgrade
+# OR: poetry run alembic upgrade head
 
 # 6. Start the application
-poetry run dev
+make dev
+# OR: poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Quick Setup (All-in-One)**:
+```bash
+make setup  # Installs dependencies, starts Docker, and runs migrations
+make dev    # Start development server
 ```
 
 ## Verify
@@ -36,6 +46,33 @@ curl http://localhost:8000/health
 
 # API docs
 open http://localhost:8000/docs
+```
+
+## Useful Commands
+
+```bash
+# View all available make commands
+make help
+
+# Run tests
+make test
+
+# Format and lint code
+make format
+make lint
+
+# Database operations
+make db-migrate MESSAGE="add new table"
+make db-downgrade
+
+# Docker operations
+make docker-down    # Stop services
+make docker-restart # Restart services
+make docker-logs    # View logs
+
+# Clean up
+make clean          # Remove cache files
+make clean-all      # Remove cache + Docker resources
 ```
 
 ## Next Steps

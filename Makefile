@@ -23,11 +23,11 @@ help: ## Show this help message
 # ============================================================================
 
 install: ## Install all dependencies using Poetry
-	$(POETRY) install --no-root
+	$(POETRY) install
 	@echo "✅ Dependencies installed successfully"
 
 install-dev: ## Install dependencies including dev tools
-	$(POETRY) install --no-root --with dev
+	$(POETRY) install --with dev
 	@echo "✅ Development dependencies installed"
 
 setup: install docker-up db-upgrade ## Complete project setup (install + docker + migrations)
@@ -38,10 +38,10 @@ setup: install docker-up db-upgrade ## Complete project setup (install + docker 
 # ============================================================================
 
 dev: ## Start development server with hot reload
-	$(POETRY) run uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+	$(POETRY) run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 dev-docker: docker-up ## Start all services in Docker and run dev server
-	$(POETRY) run uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+	$(POETRY) run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 shell: ## Open interactive Python shell with app context
 	$(POETRY) run python
@@ -122,22 +122,19 @@ coverage: test ## Generate HTML coverage report
 # Code Quality & Linting
 # ============================================================================
 
-format: ## Format code with black and isort
-	$(POETRY) run black src/ tests/
-	$(POETRY) run isort src/ tests/
+format: ## Format code with ruff
+	$(POETRY) run ruff format src/ tests/
+	$(POETRY) run ruff check --fix src/ tests/
 	@echo "✅ Code formatted"
 
-lint: ## Run all linters (flake8, mypy, black check)
-	$(POETRY) run black --check src/ tests/
-	$(POETRY) run isort --check-only src/ tests/
-	$(POETRY) run flake8 src/ tests/
+lint: ## Run all linters (ruff, mypy)
+	$(POETRY) run ruff check src/ tests/
 	$(POETRY) run mypy src/
 	@echo "✅ Linting completed"
 
-security: ## Run security checks (bandit, safety)
-	$(POETRY) run bandit -r src/ -ll
-	$(POETRY) run safety check
-	@echo "✅ Security checks completed"
+security: ## Run security checks
+	@echo "⚠️  Install bandit and safety for security checks: poetry add --group dev bandit safety"
+	@echo "ℹ️  Security checks skipped - install security tools first"
 
 check: format lint test ## Run format, lint, and test (complete check)
 	@echo "✅ All checks passed!"
@@ -185,7 +182,7 @@ deploy-prod: ## Deploy to production (requires manual confirmation)
 	fi
 
 run-prod: ## Run production server (not for actual production, use docker-compose)
-	$(POETRY) run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --workers 4
+	$(POETRY) run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 # ============================================================================
 # Monitoring & Observability
