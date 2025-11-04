@@ -63,11 +63,11 @@ services:
     image: langfuse/langfuse:latest
     container_name: shia-chatbot-langfuse
     ports:
-      - "3000:3000"
+      - "3001:3000"  # Using 3001 externally (3000 is used by Grafana)
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/langfuse
       - NEXTAUTH_SECRET=changeme-in-production
-      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_URL=http://localhost:3001
       - SALT=changeme-in-production
     depends_on:
       - postgres

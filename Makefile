@@ -191,8 +191,8 @@ run-prod: ## Run production server (not for actual production, use docker-compos
 logs: docker-logs ## Show application logs
 
 langfuse-ui: ## Open Langfuse UI for observability
-	@echo "📊 Langfuse UI available at: http://localhost:3000"
-	@open http://localhost:3000 || xdg-open http://localhost:3000 || echo "Navigate to http://localhost:3000"
+	@echo "📊 Langfuse UI available at: http://localhost:3001"
+	@open http://localhost:3001 || xdg-open http://localhost:3001 || echo "Navigate to http://localhost:3001"
 
 qdrant-ui: ## Open Qdrant UI for vector database
 	@echo "📊 Qdrant UI available at: http://localhost:6333/dashboard"
