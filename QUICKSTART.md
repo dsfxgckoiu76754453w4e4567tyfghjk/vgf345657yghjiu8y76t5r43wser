@@ -102,3 +102,41 @@ make clean-all      # Remove cache + Docker resources
 **Timeline**: 11-15 weeks remaining
 
 See [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) for detailed roadmap.
+
+---
+
+## 🔧 Development Notes
+
+### Important: Dependency Lock File Tracking
+
+**Current Setup (Development Phase):**
+- `poetry.lock` is currently **tracked in git** to ensure exact dependency versions across development machines
+- This helps maintain consistency during active development and troubleshooting
+
+**⚠️ TODO Before Production:**
+```bash
+# Uncomment this line in .gitignore before production deployment:
+# poetry.lock
+```
+
+**Why this change is temporary:**
+1. **Development Phase**: Tracking `poetry.lock` ensures all developers use identical package versions
+2. **Production Phase**: Libraries should manage their own dependencies, allowing users to get compatible versions
+3. **Best Practice**: Applications track `poetry.lock`, libraries don't
+
+**Checklist for Production:**
+- [ ] Uncomment `poetry.lock` in `.gitignore`
+- [ ] Remove `poetry.lock` from git: `git rm --cached poetry.lock`
+- [ ] Commit the change: `git commit -m "Remove poetry.lock tracking for production"`
+- [ ] Update this note in QUICKSTART.md
+
+---
+
+## 📋 Development Roadmap
+
+See the complete implementation plan in [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) and phase-specific guides:
+- [PHASE2_GUIDE.md](PHASE2_GUIDE.md) - Authentication & Authorization
+- [PHASE3_GUIDE.md](PHASE3_GUIDE.md) - Core RAG System
+- [PHASE4_GUIDE.md](PHASE4_GUIDE.md) - Advanced Features
+- [PHASE5_GUIDE.md](PHASE5_GUIDE.md) - Production Deployment
+- [PHASE6_GUIDE.md](PHASE6_GUIDE.md) - Monitoring & Optimization
