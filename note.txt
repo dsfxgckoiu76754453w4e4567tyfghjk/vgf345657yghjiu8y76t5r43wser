@@ -1,0 +1,3 @@
+I need test for whole of the code I mean each module and feature and functionality should be tested.
+I mean specially need to test all endpoints and all possible scenarios including edge cases.
+which I don't see the tests for support those currently in the test cases folder.

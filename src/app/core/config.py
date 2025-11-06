@@ -35,8 +35,9 @@ class Settings(BaseSettings):
     database_pool_size: int = Field(default=20)
     database_max_overflow: int = Field(default=10)
 
-    # Database - Legacy URL support (optional, will be constructed if not provided)
-    database_url: str | None = Field(default=None)
+    # Database - Connection parameters (recommended for production)
+    # Note: Individual parameters are always used to build the connection URL
+    # This ensures better security and configuration management
 
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0")
@@ -189,15 +190,34 @@ class Settings(BaseSettings):
 
         return self
 
-    @model_validator(mode="after")
-    def build_database_url(self):
-        """Build database URL from individual parameters if not provided."""
-        if self.database_url is None:
-            self.database_url = (
-                f"{self.database_driver}://{self.database_user}:{self.database_password}"
-                f"@{self.database_host}:{self.database_port}/{self.database_name}"
-            )
-        return self
+    def get_database_url(self, database_name: str | None = None) -> str:
+        """
+        Build database URL from individual parameters.
+
+        Args:
+            database_name: Optional database name override (useful for connecting to 'postgres' db)
+
+        Returns:
+            str: Complete database URL
+        """
+        db_name = database_name if database_name is not None else self.database_name
+        return (
+            f"{self.database_driver}://{self.database_user}:{self.database_password}"
+            f"@{self.database_host}:{self.database_port}/{db_name}"
+        )
+
+    @property
+    def database_url(self) -> str:
+        """
+        Get the database URL as a computed property.
+
+        This ensures the URL is always constructed from individual parameters,
+        preventing environment variable override issues.
+
+        Returns:
+            str: Complete database URL
+        """
+        return self.get_database_url()
 
     @property
     def is_production(self) -> bool:
@@ -222,3 +242,14 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Get the global settings instance.
+
+    This function is used for dependency injection in FastAPI.
+
+    Returns:
+        Settings: The global settings instance
+    """
+    return settings

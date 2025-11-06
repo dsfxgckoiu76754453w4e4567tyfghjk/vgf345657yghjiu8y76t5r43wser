@@ -165,3 +165,7 @@ class APIUsageLog(Base):
 
     def __repr__(self) -> str:
         return f"<APIUsageLog(client_id={self.client_id}, endpoint={self.endpoint})>"
+
+
+# Alias for backward compatibility
+ExternalAPIUsageLog = APIUsageLog

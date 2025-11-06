@@ -1,6 +1,8 @@
 """Pydantic schemas for specialized tools API."""
 
-from datetime import date, datetime
+from __future__ import annotations
+
+from datetime import date as Date, datetime
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -137,10 +139,11 @@ class PrayerTimesRequest(BaseModel):
 
     city: str = Field(..., min_length=2, max_length=100, description="City name")
     country: str = Field(..., min_length=2, max_length=100, description="Country name")
-    date: Optional[date] = Field(default=None, description="Date (defaults to today)")
+    request_date: Optional[Date] = Field(default=None, description="Date (defaults to today)", alias="date")
 
     class Config:
         json_schema_extra = {"example": {"city": "Tehran", "country": "Iran", "date": "2025-10-25"}}
+        populate_by_name = True
 
 
 class PrayerTimesResponse(BaseModel):
@@ -148,12 +151,13 @@ class PrayerTimesResponse(BaseModel):
 
     city: str
     country: str
-    date: date
+    prayer_date: Date
     prayer_times: dict[str, str]
     timezone: str
     calculation_method: str
 
     class Config:
+        populate_by_name = True
         json_schema_extra = {
             "example": {
                 "city": "Tehran",

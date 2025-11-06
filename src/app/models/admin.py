@@ -141,3 +141,82 @@ class AdminTask(Base):
 
     def __repr__(self) -> str:
         return f"<AdminTask(id={self.id}, type={self.task_type}, status={self.status})>"
+
+
+class AdminAPIKey(Base):
+    """Admin API keys for programmatic access."""
+
+    __tablename__ = "admin_api_keys"
+
+    # Primary Key
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+
+    # Key details
+    created_by_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    key_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    permissions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    # Status and expiration
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<AdminAPIKey(id={self.id}, name={self.key_name})>"
+
+
+class AdminActivityLog(Base):
+    """Log of all admin activities for audit trail."""
+
+    __tablename__ = "admin_activity_logs"
+
+    # Primary Key
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+
+    # Activity details
+    admin_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    resource_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    details: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    # Timestamp
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<AdminActivityLog(id={self.id}, action={self.action})>"
+
+
+class ContentModerationLog(Base):
+    """Log of content moderation actions."""
+
+    __tablename__ = "content_moderation_logs"
+
+    # Primary Key
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+
+    # Moderation details
+    moderator_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    content_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    action: Mapped[str] = mapped_column(String(50), nullable=False)  # approve, reject, flag
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Timestamp
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<ContentModerationLog(id={self.id}, action={self.action})>"

@@ -27,7 +27,7 @@ from app.services.admin_service import AdminService
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter()
 
 
 # TODO: Add authentication dependency to verify admin role
