@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     DateTime,
+    ForeignKey,
     Integer,
     Numeric,
     String,
@@ -46,7 +47,7 @@ class ExternalAPIClient(Base):
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
     ban_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     banned_by: Mapped[Optional[UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+        ForeignKey("system_admins.id"), nullable=True
     )  # References system_admins
     banned_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -92,7 +93,7 @@ class ExternalAPIClient(Base):
     additional_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     # Admin tracking
-    created_by: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -124,7 +125,7 @@ class APIUsageLog(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    client_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    client_id: Mapped[UUID] = mapped_column(ForeignKey("external_api_clients.id"), nullable=False)
 
     # Request details
     endpoint: Mapped[str] = mapped_column(String(255), nullable=False)

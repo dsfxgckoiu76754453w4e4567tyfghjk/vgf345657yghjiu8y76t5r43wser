@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Integer,
     Numeric,
     String,
@@ -27,7 +28,7 @@ class SystemAdmin(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), unique=True, nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
 
     # Admin role and permissions
     role: Mapped[str] = mapped_column(
@@ -48,7 +49,7 @@ class SystemAdmin(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Metadata
-    assigned_by: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    assigned_by: Mapped[Optional[UUID]] = mapped_column(ForeignKey("system_admins.id"), nullable=True)
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -89,7 +90,7 @@ class AdminTask(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    admin_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    admin_id: Mapped[UUID] = mapped_column(ForeignKey("system_admins.id"), nullable=False)
 
     # Task details
     task_type: Mapped[str] = mapped_column(
@@ -121,13 +122,13 @@ class AdminTask(Base):
 
     # Related entities
     related_document_id: Mapped[Optional[UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+        ForeignKey("documents.id"), nullable=True
     )
     related_ticket_id: Mapped[Optional[UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+        ForeignKey("support_tickets.id"), nullable=True
     )
     related_chunk_id: Mapped[Optional[UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+        ForeignKey("document_chunks.id"), nullable=True
     )
 
     # Performance tracking
@@ -152,7 +153,7 @@ class AdminAPIKey(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
 
     # Key details
-    created_by_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    created_by_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     key_name: Mapped[str] = mapped_column(String(200), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     permissions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
@@ -183,7 +184,7 @@ class AdminActivityLog(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
 
     # Activity details
-    admin_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    admin_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
     resource_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
@@ -207,7 +208,7 @@ class ContentModerationLog(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
 
     # Moderation details
-    moderator_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    moderator_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     content_type: Mapped[str] = mapped_column(String(50), nullable=False)
     content_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     action: Mapped[str] = mapped_column(String(50), nullable=False)  # approve, reject, flag
