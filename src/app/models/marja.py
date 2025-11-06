@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     DateTime,
+    ForeignKey,
     Integer,
     Numeric,
     String,
@@ -89,8 +90,8 @@ class MarjaOfficialSource(Base):
     additional_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     # Admin tracking
-    added_by: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
-    verified_by: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    added_by: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    verified_by: Mapped[Optional[UUID]] = mapped_column(ForeignKey("system_admins.id"), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -111,7 +112,7 @@ class AhkamFetchLog(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    marja_source_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    marja_source_id: Mapped[UUID] = mapped_column(ForeignKey("marja_official_sources.id"), nullable=False)
 
     # Request details
     question_text: Mapped[str] = mapped_column(Text, nullable=False)

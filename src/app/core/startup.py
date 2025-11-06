@@ -22,11 +22,8 @@ async def check_database_exists() -> bool:
     """
     try:
         # Connect to postgres database to check if our database exists
-        temp_url = settings.database_url.replace(
-            f"/{settings.database_name}",
-            "/postgres"
-        )
-        engine = create_async_engine(temp_url, isolation_level="AUTOCOMMIT")
+        postgres_url = settings.get_database_url(database_name="postgres")
+        engine = create_async_engine(postgres_url, isolation_level="AUTOCOMMIT")
 
         async with engine.connect() as conn:
             result = await conn.execute(
@@ -55,11 +52,8 @@ async def create_database() -> bool:
         logger.info("creating_database", database=settings.database_name)
 
         # Connect to postgres database to create our database
-        temp_url = settings.database_url.replace(
-            f"/{settings.database_name}",
-            "/postgres"
-        )
-        engine = create_async_engine(temp_url, isolation_level="AUTOCOMMIT")
+        postgres_url = settings.get_database_url(database_name="postgres")
+        engine = create_async_engine(postgres_url, isolation_level="AUTOCOMMIT")
 
         async with engine.connect() as conn:
             await conn.execute(

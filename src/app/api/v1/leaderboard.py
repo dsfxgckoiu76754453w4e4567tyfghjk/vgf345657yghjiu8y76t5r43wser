@@ -14,7 +14,7 @@ from app.services.leaderboard_service import LeaderboardService
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
+router = APIRouter()
 
 
 # ============================================================================
@@ -38,11 +38,11 @@ router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
     """,
 )
 async def get_document_upload_leaderboard(
+    db: Annotated[AsyncSession, Depends(get_db)],
     timeframe: Literal["all_time", "month", "week"] = Query(
         default="all_time", description="Time period"
     ),
     limit: int = Query(default=10, ge=1, le=100, description="Number of top users"),
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> LeaderboardResponse:
     """
     Get document upload leaderboard.
@@ -98,11 +98,11 @@ async def get_document_upload_leaderboard(
     """,
 )
 async def get_chat_activity_leaderboard(
+    db: Annotated[AsyncSession, Depends(get_db)],
     timeframe: Literal["all_time", "month", "week"] = Query(
         default="all_time", description="Time period"
     ),
     limit: int = Query(default=10, ge=1, le=100, description="Number of top users"),
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> LeaderboardResponse:
     """
     Get chat activity leaderboard.
@@ -158,11 +158,11 @@ async def get_chat_activity_leaderboard(
     """,
 )
 async def get_conversation_leaderboard(
+    db: Annotated[AsyncSession, Depends(get_db)],
     timeframe: Literal["all_time", "month", "week"] = Query(
         default="all_time", description="Time period"
     ),
     limit: int = Query(default=10, ge=1, le=100, description="Number of top users"),
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> LeaderboardResponse:
     """
     Get conversation leaderboard.
@@ -223,11 +223,11 @@ async def get_conversation_leaderboard(
     """,
 )
 async def get_overall_leaderboard(
+    db: Annotated[AsyncSession, Depends(get_db)],
     timeframe: Literal["all_time", "month", "week"] = Query(
         default="all_time", description="Time period"
     ),
     limit: int = Query(default=10, ge=1, le=100, description="Number of top users"),
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> LeaderboardResponse:
     """
     Get overall leaderboard.

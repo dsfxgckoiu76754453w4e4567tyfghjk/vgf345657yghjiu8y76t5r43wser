@@ -35,8 +35,9 @@ class Settings(BaseSettings):
     database_pool_size: int = Field(default=20)
     database_max_overflow: int = Field(default=10)
 
-    # Database - Legacy URL support (optional, will be constructed if not provided)
-    database_url: str | None = Field(default=None)
+    # Database - Connection parameters (recommended for production)
+    # Note: Individual parameters are always used to build the connection URL
+    # This ensures better security and configuration management
 
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0")
@@ -97,9 +98,12 @@ class Settings(BaseSettings):
     guardrails_llm_provider: str = Field(default="openai")
     guardrails_llm_model: str = Field(default="gpt-4o-mini")
 
-    # Logging
+    # Logging (Standard v2.0)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="DEBUG")
     log_format: Literal["colored", "json"] = Field(default="colored")
+    log_timestamp: Literal["utc", "ir", "both"] = Field(default="both")
+    log_timestamp_precision: Literal[3, 6] = Field(default=6)  # 3=ms, 6=μs
+    log_color: Literal["auto", "true", "false"] = Field(default="auto")
     langfuse_enabled: bool = Field(default=False)
     langfuse_public_key: str | None = Field(default=None)
     langfuse_secret_key: str | None = Field(default=None)
@@ -136,6 +140,10 @@ class Settings(BaseSettings):
     smtp_password: str | None = Field(default=None)
     smtp_from_email: str = Field(default="noreply@example.com")
 
+    # Super Admin (for initial setup)
+    super_admin_email: str = Field(default="admin@wisqu.com")
+    super_admin_password: str = Field(default="ChangeMe123!")
+
     @field_validator("cors_origins")
     @classmethod
     def parse_cors_origins(cls, v: str) -> list[str]:
@@ -169,6 +177,14 @@ class Settings(BaseSettings):
             return "colored" if environment == "dev" else "json"
         return v
 
+    @field_validator("log_timestamp_precision", mode="before")
+    @classmethod
+    def convert_log_timestamp_precision(cls, v):
+        """Convert string to int for log_timestamp_precision."""
+        if isinstance(v, str):
+            return int(v)
+        return v
+
     @model_validator(mode="after")
     def validate_production_secrets(self):
         """Validate that production environments have secure secrets."""
@@ -189,15 +205,34 @@ class Settings(BaseSettings):
 
         return self
 
-    @model_validator(mode="after")
-    def build_database_url(self):
-        """Build database URL from individual parameters if not provided."""
-        if self.database_url is None:
-            self.database_url = (
-                f"{self.database_driver}://{self.database_user}:{self.database_password}"
-                f"@{self.database_host}:{self.database_port}/{self.database_name}"
-            )
-        return self
+    def get_database_url(self, database_name: str | None = None) -> str:
+        """
+        Build database URL from individual parameters.
+
+        Args:
+            database_name: Optional database name override (useful for connecting to 'postgres' db)
+
+        Returns:
+            str: Complete database URL
+        """
+        db_name = database_name if database_name is not None else self.database_name
+        return (
+            f"{self.database_driver}://{self.database_user}:{self.database_password}"
+            f"@{self.database_host}:{self.database_port}/{db_name}"
+        )
+
+    @property
+    def database_url(self) -> str:
+        """
+        Get the database URL as a computed property.
+
+        This ensures the URL is always constructed from individual parameters,
+        preventing environment variable override issues.
+
+        Returns:
+            str: Complete database URL
+        """
+        return self.get_database_url()
 
     @property
     def is_production(self) -> bool:
@@ -222,3 +257,14 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Get the global settings instance.
+
+    This function is used for dependency injection in FastAPI.
+
+    Returns:
+        Settings: The global settings instance
+    """
+    return settings

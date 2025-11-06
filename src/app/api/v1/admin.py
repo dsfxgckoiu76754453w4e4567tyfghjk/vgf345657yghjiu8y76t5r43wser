@@ -6,8 +6,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_admin_user
 from app.core.logging import get_logger
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.admin import (
     APIKeyResponse,
     BanUserRequest,
@@ -27,13 +29,11 @@ from app.services.admin_service import AdminService
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter()
 
 
-# TODO: Add authentication dependency to verify admin role
-# async def get_current_admin_user(...) -> User:
-#     # Verify JWT token and check if user has admin/super_admin role
-#     pass
+# Admin authentication dependency (requires 'admin' or 'superadmin' role)
+AdminUser = Annotated[User, Depends(get_admin_user)]
 
 
 # ============================================================================
@@ -61,7 +61,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 async def create_api_key(
     request: CreateAPIKeyRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-    # current_admin: Annotated[User, Depends(get_current_admin_user)],
+    admin_user: AdminUser,
 ) -> APIKeyResponse:
     """
     Create a new admin API key.
@@ -69,13 +69,12 @@ async def create_api_key(
     Args:
         request: API key creation request
         db: Database session
+        admin_user: Authenticated admin user
 
     Returns:
         API key with the generated key (ONLY SHOWN ONCE)
     """
-    # TODO: Verify super-admin role
-    # For now, using placeholder admin_user_id
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)
@@ -105,19 +104,21 @@ async def create_api_key(
 )
 async def list_api_keys(
     db: Annotated[AsyncSession, Depends(get_db)],
+    admin_user: AdminUser,
     include_expired: bool = Query(default=False, description="Include expired keys"),
 ) -> list[APIKeyResponse]:
     """
     List all API keys.
 
     Args:
-        include_expired: Include expired keys
         db: Database session
+        admin_user: Authenticated admin user
+        include_expired: Include expired keys
 
     Returns:
         List of API keys
     """
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)
@@ -146,6 +147,7 @@ async def list_api_keys(
 async def revoke_api_key(
     api_key_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
+    admin_user: AdminUser,
 ) -> RevokeAPIKeyResponse:
     """
     Revoke an API key.
@@ -153,11 +155,12 @@ async def revoke_api_key(
     Args:
         api_key_id: ID of API key to revoke
         db: Database session
+        admin_user: Authenticated admin user
 
     Returns:
         Revocation confirmation
     """
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)
@@ -195,6 +198,7 @@ async def revoke_api_key(
 )
 async def list_users(
     db: Annotated[AsyncSession, Depends(get_db)],
+    admin_user: AdminUser,
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=50, ge=1, le=100, description="Items per page"),
     search_query: Optional[str] = Query(default=None, description="Search by email or name"),
@@ -204,16 +208,17 @@ async def list_users(
     List all users.
 
     Args:
+        db: Database session
+        admin_user: Authenticated admin user
         page: Page number
         page_size: Items per page
         search_query: Search query
         role_filter: Role filter
-        db: Database session
 
     Returns:
         Paginated user list
     """
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)
@@ -246,6 +251,7 @@ async def ban_user(
     user_id: UUID,
     request: BanUserRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    admin_user: AdminUser,
 ) -> BanUserResponse:
     """
     Ban a user.
@@ -254,11 +260,12 @@ async def ban_user(
         user_id: ID of user to ban
         request: Ban request with reason and duration
         db: Database session
+        admin_user: Authenticated admin user
 
     Returns:
         Ban confirmation
     """
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)
@@ -294,6 +301,7 @@ async def ban_user(
 async def unban_user(
     user_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
+    admin_user: AdminUser,
 ) -> UnbanUserResponse:
     """
     Unban a user.
@@ -301,11 +309,12 @@ async def unban_user(
     Args:
         user_id: ID of user to unban
         db: Database session
+        admin_user: Authenticated admin user
 
     Returns:
         Unban confirmation
     """
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)
@@ -340,6 +349,7 @@ async def change_user_role(
     user_id: UUID,
     request: ChangeUserRoleRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    admin_user: AdminUser,
 ) -> ChangeUserRoleResponse:
     """
     Change a user's role.
@@ -348,11 +358,12 @@ async def change_user_role(
         user_id: ID of user
         request: Role change request
         db: Database session
+        admin_user: Authenticated admin user
 
     Returns:
         Role change confirmation
     """
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)
@@ -391,19 +402,21 @@ async def change_user_role(
 )
 async def get_pending_content(
     db: Annotated[AsyncSession, Depends(get_db)],
+    admin_user: AdminUser,
     limit: int = Query(default=20, ge=1, le=100, description="Maximum items to return"),
 ) -> list[PendingContentItem]:
     """
     Get pending content.
 
     Args:
-        limit: Maximum items to return
         db: Database session
+        admin_user: Authenticated admin user
+        limit: Maximum items to return
 
     Returns:
         List of pending content items
     """
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)
@@ -434,6 +447,7 @@ async def moderate_content(
     content_id: UUID,
     request: ModerateContentRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    admin_user: AdminUser,
 ) -> ModerateContentResponse:
     """
     Moderate content.
@@ -443,11 +457,12 @@ async def moderate_content(
         content_id: ID of content
         request: Moderation action
         db: Database session
+        admin_user: Authenticated admin user
 
     Returns:
         Moderation confirmation
     """
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)
@@ -488,17 +503,19 @@ async def moderate_content(
 )
 async def get_system_statistics(
     db: Annotated[AsyncSession, Depends(get_db)],
+    admin_user: AdminUser,
 ) -> SystemStatisticsResponse:
     """
     Get system statistics.
 
     Args:
         db: Database session
+        admin_user: Authenticated admin user
 
     Returns:
         System statistics
     """
-    admin_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    admin_user_id = admin_user.id
 
     try:
         admin_service = AdminService(db)

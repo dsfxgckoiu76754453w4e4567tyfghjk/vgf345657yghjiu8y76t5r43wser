@@ -23,7 +23,7 @@ from app.services.external_api_client_service import ExternalAPIClientService
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/external-api", tags=["external_api"])
+router = APIRouter()
 
 
 # TODO: Add authentication dependency
@@ -107,8 +107,8 @@ async def register_client(
     description="List all API clients owned by the current user.",
 )
 async def list_clients(
-    include_inactive: bool = Query(default=False, description="Include inactive clients"),
     db: Annotated[AsyncSession, Depends(get_db)],
+    include_inactive: bool = Query(default=False, description="Include inactive clients"),
 ) -> list[ClientListItem]:
     """
     List API clients.
@@ -413,8 +413,8 @@ async def activate_client(
 )
 async def get_usage_statistics(
     client_id: UUID,
-    days: int = Query(default=7, ge=1, le=90, description="Number of days to analyze"),
     db: Annotated[AsyncSession, Depends(get_db)],
+    days: int = Query(default=7, ge=1, le=90, description="Number of days to analyze"),
 ) -> UsageStatisticsResponse:
     """
     Get usage statistics.

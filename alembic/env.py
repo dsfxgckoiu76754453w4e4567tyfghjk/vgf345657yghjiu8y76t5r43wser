@@ -18,8 +18,15 @@ from app.models.document import Document, DocumentChunk, DocumentEmbedding
 from app.models.marja import MarjaOfficialSource, AhkamFetchLog
 from app.models.external_api import ExternalAPIClient, APIUsageLog
 
+# Import settings to get database URL from individual parameters
+from app.core.config import settings
+
 # this is the Alembic Config object
 config = context.config
+
+# Override the sqlalchemy.url with the one from settings
+# This ensures Alembic uses the same database configuration as the app
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:

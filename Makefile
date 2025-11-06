@@ -6,7 +6,7 @@
 # Variables
 PYTHON := python3
 POETRY := poetry
-DOCKER_COMPOSE := docker-compose
+DOCKER_COMPOSE := docker compose
 APP_NAME := shia-chatbot
 DOCKER_IMAGE := $(APP_NAME):latest
 

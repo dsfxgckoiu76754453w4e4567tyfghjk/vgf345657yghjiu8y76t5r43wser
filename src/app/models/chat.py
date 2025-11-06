@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Integer,
     Numeric,
     String,
@@ -28,7 +29,7 @@ class Conversation(Base):
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id: Mapped[Optional[UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+        ForeignKey("users.id"), nullable=True
     )  # Nullable for truly anonymous
 
     # Conversation metadata
@@ -82,7 +83,7 @@ class Message(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    conversation_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    conversation_id: Mapped[UUID] = mapped_column(ForeignKey("conversations.id"), nullable=False)
 
     # Message identification
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # user, assistant, system
@@ -153,7 +154,7 @@ class MessageEditHistory(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    message_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
 
     # Edit details
     previous_content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -178,8 +179,8 @@ class MessageFeedback(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    message_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    user_id: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
+    user_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     # Feedback type
     feedback_type: Mapped[str] = mapped_column(

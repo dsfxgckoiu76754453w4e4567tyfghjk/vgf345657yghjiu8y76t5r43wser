@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    ForeignKey,
     Integer,
     Numeric,
     String,
@@ -80,7 +81,7 @@ class Document(Base):
     requires_chunk_approval: Mapped[bool] = mapped_column(Boolean, default=True)
     chunk_approval_status: Mapped[str] = mapped_column(String(50), default="pending")
     chunk_approved_by: Mapped[Optional[UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+        ForeignKey("system_admins.id"), nullable=True
     )
     chunk_approved_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -94,8 +95,8 @@ class Document(Base):
     additional_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     # Admin tracking
-    uploaded_by: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
-    verified_by: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    uploaded_by: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    verified_by: Mapped[Optional[UUID]] = mapped_column(ForeignKey("system_admins.id"), nullable=True)
 
     # Timestamps
     uploaded_at: Mapped[datetime] = mapped_column(
@@ -130,7 +131,7 @@ class DocumentChunk(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    document_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"), nullable=False)
 
     # Chunk content
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -143,9 +144,9 @@ class DocumentChunk(Base):
 
     # Context preservation
     previous_chunk_id: Mapped[Optional[UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+        ForeignKey("document_chunks.id"), nullable=True
     )
-    next_chunk_id: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    next_chunk_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("document_chunks.id"), nullable=True)
 
     # Chunking strategy info
     chunking_method: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -179,7 +180,7 @@ class DocumentEmbedding(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    chunk_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    chunk_id: Mapped[UUID] = mapped_column(ForeignKey("document_chunks.id"), nullable=False)
 
     # Embedding identification
     embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
