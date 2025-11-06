@@ -51,6 +51,9 @@ class User(Base):
     account_type: Mapped[str] = mapped_column(
         String(20), default="free"
     )  # anonymous, free, premium, unlimited, test
+    role: Mapped[str] = mapped_column(
+        String(20), default="user"
+    )  # user, admin, superadmin
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

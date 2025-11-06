@@ -46,7 +46,7 @@ async def create_super_admin():
                 email=settings.super_admin_email,
                 password_hash=hash_password(settings.super_admin_password),
                 full_name="Super Administrator",
-                role="super_admin",
+                role="superadmin",  # Fixed: no underscore to match dependencies
                 is_email_verified=True,
                 is_active=True,
                 account_type="unlimited",
@@ -79,7 +79,7 @@ async def create_super_admin():
             print(f"✅ Super admin created successfully!")
             print(f"   Email: {settings.super_admin_email}")
             print(f"   User ID: {admin.id}")
-            print(f"   Role: super_admin")
+            print(f"   Role: superadmin")
             print()
             print("⚠️  IMPORTANT: Change the password immediately after first login!")
 

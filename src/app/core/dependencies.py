@@ -121,3 +121,51 @@ async def get_optional_current_user(
         return None
     except (JWTError, HTTPException):
         return None
+
+
+async def get_admin_user(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """
+    Get the current user and verify they have admin or superadmin role.
+
+    Args:
+        current_user: Current authenticated user
+
+    Returns:
+        User: Current user with admin privileges
+
+    Raises:
+        HTTPException: If user does not have admin role
+    """
+    if current_user.role not in ("admin", "superadmin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ADMIN_ACCESS_REQUIRED",
+        )
+
+    return current_user
+
+
+async def get_superadmin_user(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """
+    Get the current user and verify they have superadmin role.
+
+    Args:
+        current_user: Current authenticated user
+
+    Returns:
+        User: Current user with superadmin privileges
+
+    Raises:
+        HTTPException: If user does not have superadmin role
+    """
+    if current_user.role != "superadmin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="SUPERADMIN_ACCESS_REQUIRED",
+        )
+
+    return current_user

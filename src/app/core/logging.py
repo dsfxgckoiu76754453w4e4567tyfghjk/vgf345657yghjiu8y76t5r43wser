@@ -1,14 +1,17 @@
 """
-Custom logging configuration following the project standard.
+Custom logging configuration following the Logging Standard v2.0.
 
 Logging Format:
-    [UTC][IR][level] message [logger] key=value...
+    [timestamp][level] message [context] key=value...
 
 Example:
     [2025-11-04 16:00:49.458807 UTC][1404-08-14 19:30:49.458807 IR][info] scheduler_started [__main__] jobs=2
+
+Note: Iranian timestamps use Jalali calendar format YYYY-MM-DD (NO 'J' prefix)
 """
 
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from typing import Any
@@ -21,61 +24,108 @@ from structlog.types import EventDict, Processor
 from app.core.config import settings
 
 
-# ANSI color codes (16-color standard for max compatibility)
+# ANSI color codes following Logging Standard v2.0
 class Colors:
-    """ANSI 16-color codes for terminal output."""
+    """ANSI color codes for terminal output (Standard v2.0)."""
 
-    # Timestamp colors
-    UTC = "\033[36m"  # Cyan
-    IR = "\033[34m"  # Blue
+    # Timestamp colors (bright variants for better visibility)
+    UTC = "\033[96m"  # Bright Cyan (96)
+    IR = "\033[94m"  # Bright Blue (94)
 
     # Level colors
-    DEBUG = "\033[90m"  # Gray
-    INFO = "\033[32m"  # Green
-    WARN = "\033[33m"  # Yellow
-    ERROR = "\033[31m"  # Red
+    DEBUG = "\033[90m"  # Bright Black/Gray (90)
+    INFO = "\033[92m"  # Bright Green (92)
+    WARN = "\033[93m"  # Bright Yellow (93)
+    ERROR = "\033[91m"  # Bright Red (91)
+
+    # Context and key colors
+    CONTEXT = "\033[95m"  # Bright Magenta (95)
+    KEY = "\033[36m"  # Cyan (36)
 
     # Reset
     RESET = "\033[0m"
 
     @staticmethod
-    def is_tty() -> bool:
-        """Check if stdout is a TTY (terminal)."""
+    def should_use_colors() -> bool:
+        """
+        Determine if colors should be used.
+
+        Colors are disabled when:
+        - Not running in a TTY
+        - NO_COLOR environment variable is set
+        - LOG_COLOR is explicitly set to 'false'
+        - Running in Docker/Kubernetes (detected via env vars)
+        - Output is redirected
+        """
+        # Check NO_COLOR environment variable (standard: https://no-color.org/)
+        if os.environ.get("NO_COLOR"):
+            return False
+
+        # Check LOG_COLOR setting
+        log_color = os.environ.get("LOG_COLOR", "auto").lower()
+        if log_color == "false":
+            return False
+        if log_color == "true":
+            return True
+
+        # Check if running in Docker/Kubernetes
+        if os.environ.get("KUBERNETES_SERVICE_HOST") or os.path.exists("/.dockerenv"):
+            return False
+
+        # Auto-detect: only use colors if stdout is a TTY
         return sys.stdout.isatty()
 
 
 def add_dual_timestamps(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
     """
-    Add both UTC and Iranian (Jalali) timestamps to the log event.
+    Add UTC and/or Iranian (Jalali) timestamps to the log event.
 
     Format:
         UTC: [YYYY-MM-DD HH:MM:SS.μs UTC]
-        IR:  [JYYYY-JMM-JDD HH:MM:SS.μs IR]
+        IR:  [YYYY-MM-DD HH:MM:SS.μs IR]  (NO 'J' prefix!)
+
+    Configuration:
+        LOG_TIMESTAMP: 'utc' | 'ir' | 'both' (default: 'both')
+        LOG_TIMESTAMP_PRECISION: 3 (ms) or 6 (μs) (default: 6)
     """
+    # Get configuration
+    timestamp_mode = os.environ.get("LOG_TIMESTAMP", "both").lower()
+    precision = int(os.environ.get("LOG_TIMESTAMP_PRECISION", "6"))
+
     now_utc = datetime.now(timezone.utc)
 
-    # UTC timestamp with microseconds
-    utc_str = now_utc.strftime("%Y-%m-%d %H:%M:%S.%f")  # Keep all 6 digits (microseconds)
-    event_dict["timestamp_utc"] = f"{utc_str} UTC"
+    # UTC timestamp with configurable precision
+    if timestamp_mode in ("utc", "both"):
+        utc_str = now_utc.strftime("%Y-%m-%d %H:%M:%S.%f")
+        # Truncate microseconds to desired precision
+        if precision == 3:  # milliseconds
+            utc_str = utc_str[:-3]  # Remove last 3 digits
+        # precision == 6 keeps all 6 digits (microseconds)
+        event_dict["timestamp_utc"] = f"{utc_str} UTC"
 
     # Iranian timestamp (UTC+3:30)
-    iran_tz = pytz.timezone("Asia/Tehran")
-    now_iran = now_utc.astimezone(iran_tz)
+    if timestamp_mode in ("ir", "both"):
+        iran_tz = pytz.timezone("Asia/Tehran")
+        now_iran = now_utc.astimezone(iran_tz)
 
-    # Convert to Jalali calendar
-    jalali = jdatetime.datetime.fromgregorian(
-        year=now_iran.year,
-        month=now_iran.month,
-        day=now_iran.day,
-        hour=now_iran.hour,
-        minute=now_iran.minute,
-        second=now_iran.second,
-        microsecond=now_iran.microsecond,
-    )
+        # Convert to Jalali calendar
+        jalali = jdatetime.datetime.fromgregorian(
+            year=now_iran.year,
+            month=now_iran.month,
+            day=now_iran.day,
+            hour=now_iran.hour,
+            minute=now_iran.minute,
+            second=now_iran.second,
+            microsecond=now_iran.microsecond,
+        )
 
-    # Format: JYYYY-JMM-JDD HH:MM:SS.μs IR with microseconds
-    ir_str = jalali.strftime("%Y-%m-%d %H:%M:%S.%f")  # Keep all 6 digits (microseconds)
-    event_dict["timestamp_ir"] = f"{ir_str} IR"
+        # Format: YYYY-MM-DD HH:MM:SS.μs IR (NO 'J' prefix!)
+        ir_str = jalali.strftime("%Y-%m-%d %H:%M:%S.%f")
+        # Truncate microseconds to desired precision
+        if precision == 3:  # milliseconds
+            ir_str = ir_str[:-3]  # Remove last 3 digits
+        # precision == 6 keeps all 6 digits (microseconds)
+        event_dict["timestamp_ir"] = f"{ir_str} IR"
 
     return event_dict
 
@@ -92,9 +142,19 @@ def format_log_level(logger: Any, method_name: str, event_dict: EventDict) -> Ev
 
 class CustomConsoleRenderer:
     """
-    Custom renderer that outputs logs in the project standard format.
+    Custom renderer that outputs logs in Logging Standard v2.0 format.
 
-    Format: [UTC][IR][level] message [logger] key=value...
+    Format: [timestamp][level] message [context] key=value...
+
+    Colors (v2.0):
+        - UTC timestamp: Bright Cyan (96)
+        - IR timestamp: Bright Blue (94)
+        - debug: Gray (90)
+        - info: Bright Green (92)
+        - warn: Bright Yellow (93)
+        - error: Bright Red (91) - applied to both bracket AND message
+        - context: Bright Magenta (95)
+        - keys: Cyan (36)
     """
 
     def __init__(self, colors: bool = True):
@@ -102,24 +162,35 @@ class CustomConsoleRenderer:
         Initialize the renderer.
 
         Args:
-            colors: Enable ANSI colors (auto-disabled if not TTY)
+            colors: Enable ANSI colors (auto-disabled based on environment)
         """
-        self._colors_enabled = colors and Colors.is_tty()
+        self._colors_enabled = colors and Colors.should_use_colors()
 
     def __call__(self, logger: Any, name: str, event_dict: EventDict) -> str:
         """Render the log event to a string."""
         # Extract components
-        utc = event_dict.pop("timestamp_utc", "")
-        ir = event_dict.pop("timestamp_ir", "")
+        utc = event_dict.pop("timestamp_utc", None)
+        ir = event_dict.pop("timestamp_ir", None)
         level = event_dict.pop("level", "info")
         logger_name = event_dict.pop("logger", "")
         event = event_dict.pop("event", "")
 
-        # Build the timestamp and level prefix (no spaces between brackets)
-        if self._colors_enabled:
-            prefix = f"{Colors.UTC}[{utc}]{Colors.RESET}{Colors.IR}[{ir}]{Colors.RESET}"
-        else:
-            prefix = f"[{utc}][{ir}]"
+        # Build the timestamp prefix (no spaces between brackets)
+        prefix_parts = []
+
+        if utc:
+            if self._colors_enabled:
+                prefix_parts.append(f"{Colors.UTC}[{utc}]{Colors.RESET}")
+            else:
+                prefix_parts.append(f"[{utc}]")
+
+        if ir:
+            if self._colors_enabled:
+                prefix_parts.append(f"{Colors.IR}[{ir}]{Colors.RESET}")
+            else:
+                prefix_parts.append(f"[{ir}]")
+
+        prefix = "".join(prefix_parts)
 
         # Level with color
         level_color = {
@@ -134,19 +205,33 @@ class CustomConsoleRenderer:
         else:
             prefix += f"[{level}]"
 
+        # Build the message (for error level, color the message too)
+        if self._colors_enabled and level == "error":
+            message = f"{Colors.ERROR}{event}{Colors.RESET}"
+        else:
+            message = event
+
         # Build the rest of the log line with spaces
-        parts = [event]
+        parts = [message]
 
-        # Logger name (if present)
+        # Logger name/context (if present) in magenta
         if logger_name:
-            parts.append(f"[{logger_name}]")
+            if self._colors_enabled:
+                parts.append(f"{Colors.CONTEXT}[{logger_name}]{Colors.RESET}")
+            else:
+                parts.append(f"[{logger_name}]")
 
-        # Key-value pairs (remaining fields)
+        # Key-value pairs (remaining fields) with cyan keys
         for key, value in sorted(event_dict.items()):
             # Skip internal structlog fields
             if key.startswith("_"):
                 continue
-            parts.append(f"{key}={value}")
+
+            if self._colors_enabled:
+                # Color the key in cyan, leave value default
+                parts.append(f"{Colors.KEY}{key}={Colors.RESET}{value}")
+            else:
+                parts.append(f"{key}={value}")
 
         # Combine prefix and parts
         return prefix + " " + " ".join(parts)

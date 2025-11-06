@@ -98,9 +98,12 @@ class Settings(BaseSettings):
     guardrails_llm_provider: str = Field(default="openai")
     guardrails_llm_model: str = Field(default="gpt-4o-mini")
 
-    # Logging
+    # Logging (Standard v2.0)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="DEBUG")
     log_format: Literal["colored", "json"] = Field(default="colored")
+    log_timestamp: Literal["utc", "ir", "both"] = Field(default="both")
+    log_timestamp_precision: Literal[3, 6] = Field(default=6)  # 3=ms, 6=μs
+    log_color: Literal["auto", "true", "false"] = Field(default="auto")
     langfuse_enabled: bool = Field(default=False)
     langfuse_public_key: str | None = Field(default=None)
     langfuse_secret_key: str | None = Field(default=None)
@@ -137,6 +140,10 @@ class Settings(BaseSettings):
     smtp_password: str | None = Field(default=None)
     smtp_from_email: str = Field(default="noreply@example.com")
 
+    # Super Admin (for initial setup)
+    super_admin_email: str = Field(default="admin@wisqu.com")
+    super_admin_password: str = Field(default="ChangeMe123!")
+
     @field_validator("cors_origins")
     @classmethod
     def parse_cors_origins(cls, v: str) -> list[str]:
@@ -168,6 +175,14 @@ class Settings(BaseSettings):
         if v is None:
             environment = info.data.get("environment", "dev")
             return "colored" if environment == "dev" else "json"
+        return v
+
+    @field_validator("log_timestamp_precision", mode="before")
+    @classmethod
+    def convert_log_timestamp_precision(cls, v):
+        """Convert string to int for log_timestamp_precision."""
+        if isinstance(v, str):
+            return int(v)
         return v
 
     @model_validator(mode="after")
