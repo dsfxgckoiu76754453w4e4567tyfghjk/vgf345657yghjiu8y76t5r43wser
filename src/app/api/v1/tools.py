@@ -32,7 +32,7 @@ from app.services.tool_orchestration_service import ToolOrchestrationService
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/tools", tags=["tools"])
+router = APIRouter()
 
 
 # ============================================================================

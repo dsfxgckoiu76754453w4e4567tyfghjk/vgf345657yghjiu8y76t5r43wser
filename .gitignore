@@ -33,7 +33,9 @@ env.bak/
 venv.bak/
 
 # Poetry
-poetry.lock
+# DEVELOPMENT NOTE: poetry.lock is tracked during development for exact dependency matching
+# TODO: Uncomment this before production deployment
+# poetry.lock
 
 # IDEs
 .vscode/

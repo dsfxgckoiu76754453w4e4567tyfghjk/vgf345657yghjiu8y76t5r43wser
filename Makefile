@@ -1,12 +1,12 @@
 # Shia Islamic Chatbot - Makefile
 # Minimal yet comprehensive build automation
 
-.PHONY: help install dev test lint clean docker-up docker-down docker-build db-migrate db-upgrade db-downgrade format security deploy
+.PHONY: help install dev test lint clean docker-up docker-down docker-build docker-ps docker-health docker-clean docker-clean-all docker-backup db-migrate db-upgrade db-downgrade format security deploy
 
 # Variables
 PYTHON := python3
 POETRY := poetry
-DOCKER_COMPOSE := docker-compose
+DOCKER_COMPOSE := docker compose
 APP_NAME := shia-chatbot
 DOCKER_IMAGE := $(APP_NAME):latest
 
@@ -23,11 +23,11 @@ help: ## Show this help message
 # ============================================================================
 
 install: ## Install all dependencies using Poetry
-	$(POETRY) install --no-root
+	$(POETRY) install
 	@echo "✅ Dependencies installed successfully"
 
 install-dev: ## Install dependencies including dev tools
-	$(POETRY) install --no-root --with dev
+	$(POETRY) install --with dev
 	@echo "✅ Development dependencies installed"
 
 setup: install docker-up db-upgrade ## Complete project setup (install + docker + migrations)
@@ -38,10 +38,10 @@ setup: install docker-up db-upgrade ## Complete project setup (install + docker 
 # ============================================================================
 
 dev: ## Start development server with hot reload
-	$(POETRY) run uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+	$(POETRY) run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 dev-docker: docker-up ## Start all services in Docker and run dev server
-	$(POETRY) run uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+	$(POETRY) run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 shell: ## Open interactive Python shell with app context
 	$(POETRY) run python
@@ -67,9 +67,37 @@ docker-build: ## Build Docker image for the application
 docker-logs: ## Show logs from all Docker services
 	$(DOCKER_COMPOSE) logs -f
 
-docker-clean: ## Remove all Docker containers, volumes, and images
+docker-ps: ## Check status and health of all Docker services
+	$(DOCKER_COMPOSE) ps
+	@echo ""
+	@echo "Volume Status:"
+	@docker volume ls | grep $(APP_NAME) || echo "No volumes found"
+
+docker-health: ## Check health status of all services
+	@echo "🏥 Checking service health..."
+	@$(DOCKER_COMPOSE) ps | grep -E "healthy|unhealthy" || echo "Health checks running..."
+	@echo ""
+	@echo "Testing application health endpoint:"
+	@curl -s http://localhost:8000/health?check_services=true | python3 -m json.tool || echo "⚠️  Application not running"
+
+docker-clean: ## Remove all Docker containers and images (preserves volumes)
+	$(DOCKER_COMPOSE) down --rmi all
+	@echo "✅ Docker containers and images removed (volumes preserved)"
+
+docker-clean-all: ## Remove all Docker containers, volumes, and images (⚠️  DELETES ALL DATA!)
+	@echo "⚠️  WARNING: This will DELETE ALL DATA in volumes!"
+	@echo "Press Ctrl+C to cancel, or Enter to continue..."
+	@read confirm
 	$(DOCKER_COMPOSE) down -v --rmi all
-	@echo "✅ Docker environment cleaned"
+	@echo "✅ Docker environment completely cleaned"
+
+docker-backup: ## Backup all Docker volumes
+	@echo "📦 Creating backups..."
+	@mkdir -p backups
+	@docker run --rm -v $(APP_NAME)_postgres_data:/data -v $(PWD)/backups:/backup ubuntu tar czf /backup/postgres_$(shell date +%Y%m%d_%H%M%S).tar.gz /data
+	@docker run --rm -v $(APP_NAME)_redis_data:/data -v $(PWD)/backups:/backup ubuntu tar czf /backup/redis_$(shell date +%Y%m%d_%H%M%S).tar.gz /data
+	@docker run --rm -v $(APP_NAME)_qdrant_data:/data -v $(PWD)/backups:/backup ubuntu tar czf /backup/qdrant_$(shell date +%Y%m%d_%H%M%S).tar.gz /data
+	@echo "✅ Backups created in ./backups/"
 
 # ============================================================================
 # Database Operations
@@ -122,22 +150,19 @@ coverage: test ## Generate HTML coverage report
 # Code Quality & Linting
 # ============================================================================
 
-format: ## Format code with black and isort
-	$(POETRY) run black src/ tests/
-	$(POETRY) run isort src/ tests/
+format: ## Format code with ruff
+	$(POETRY) run ruff format src/ tests/
+	$(POETRY) run ruff check --fix src/ tests/
 	@echo "✅ Code formatted"
 
-lint: ## Run all linters (flake8, mypy, black check)
-	$(POETRY) run black --check src/ tests/
-	$(POETRY) run isort --check-only src/ tests/
-	$(POETRY) run flake8 src/ tests/
+lint: ## Run all linters (ruff, mypy)
+	$(POETRY) run ruff check src/ tests/
 	$(POETRY) run mypy src/
 	@echo "✅ Linting completed"
 
-security: ## Run security checks (bandit, safety)
-	$(POETRY) run bandit -r src/ -ll
-	$(POETRY) run safety check
-	@echo "✅ Security checks completed"
+security: ## Run security checks
+	@echo "⚠️  Install bandit and safety for security checks: poetry add --group dev bandit safety"
+	@echo "ℹ️  Security checks skipped - install security tools first"
 
 check: format lint test ## Run format, lint, and test (complete check)
 	@echo "✅ All checks passed!"
@@ -185,7 +210,7 @@ deploy-prod: ## Deploy to production (requires manual confirmation)
 	fi
 
 run-prod: ## Run production server (not for actual production, use docker-compose)
-	$(POETRY) run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --workers 4
+	$(POETRY) run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 # ============================================================================
 # Monitoring & Observability
@@ -194,8 +219,8 @@ run-prod: ## Run production server (not for actual production, use docker-compos
 logs: docker-logs ## Show application logs
 
 langfuse-ui: ## Open Langfuse UI for observability
-	@echo "📊 Langfuse UI available at: http://localhost:3000"
-	@open http://localhost:3000 || xdg-open http://localhost:3000 || echo "Navigate to http://localhost:3000"
+	@echo "📊 Langfuse UI available at: http://localhost:3001"
+	@open http://localhost:3001 || xdg-open http://localhost:3001 || echo "Navigate to http://localhost:3001"
 
 qdrant-ui: ## Open Qdrant UI for vector database
 	@echo "📊 Qdrant UI available at: http://localhost:6333/dashboard"

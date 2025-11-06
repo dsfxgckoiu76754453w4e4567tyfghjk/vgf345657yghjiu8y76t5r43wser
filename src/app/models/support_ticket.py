@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, String, Text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -21,7 +21,7 @@ class SupportTicket(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
 
     # User information
-    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
 
     # Ticket details
     subject: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -40,7 +40,7 @@ class SupportTicket(Base):
 
     # Assignment
     assigned_to_admin_id: Mapped[Optional[UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+        ForeignKey("system_admins.id"), nullable=True
     )
 
     # Resolution
@@ -94,9 +94,9 @@ class SupportTicketResponse(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
 
     # Foreign Keys
-    ticket_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    ticket_id: Mapped[UUID] = mapped_column(ForeignKey("support_tickets.id"), nullable=False)
     responder_user_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=False
+        ForeignKey("users.id"), nullable=False
     )  # Can be user or admin
 
     # Response content

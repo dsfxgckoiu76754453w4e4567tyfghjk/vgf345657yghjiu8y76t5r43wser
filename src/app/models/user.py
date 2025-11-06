@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -50,6 +51,9 @@ class User(Base):
     account_type: Mapped[str] = mapped_column(
         String(20), default="free"
     )  # anonymous, free, premium, unlimited, test
+    role: Mapped[str] = mapped_column(
+        String(20), default="user"
+    )  # user, admin, superadmin
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -140,7 +144,7 @@ class UserSession(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
 
     # Session identification
     session_token: Mapped[str] = mapped_column(String(500), unique=True, nullable=False)
@@ -180,7 +184,7 @@ class LinkedAuthProvider(Base):
 
     # Primary Key
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
 
     # Provider details
     provider_type: Mapped[str] = mapped_column(
@@ -219,7 +223,7 @@ class UserSettings(Base):
     __tablename__ = "user_settings"
 
     # Primary Key (one-to-one with User)
-    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
 
     # UI preferences
     theme: Mapped[str] = mapped_column(String(20), default="light")  # light, dark, auto

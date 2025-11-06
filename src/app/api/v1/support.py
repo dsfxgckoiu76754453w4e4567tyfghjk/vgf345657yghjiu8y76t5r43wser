@@ -25,7 +25,7 @@ from app.services.support_service import SupportService
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/support", tags=["support"])
+router = APIRouter()
 
 
 # TODO: Add authentication dependency
@@ -109,10 +109,10 @@ async def create_ticket(
     description="List tickets created by the current user.",
 )
 async def list_my_tickets(
+    db: Annotated[AsyncSession, Depends(get_db)],
     status_filter: Optional[str] = Query(default=None, description="Filter by status"),
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TicketListResponse:
     """
     List user's own tickets.
@@ -159,13 +159,13 @@ async def list_my_tickets(
     """,
 )
 async def list_all_tickets(
+    db: Annotated[AsyncSession, Depends(get_db)],
     status_filter: Optional[str] = Query(default=None, description="Filter by status"),
     category_filter: Optional[str] = Query(default=None, description="Filter by category"),
     priority_filter: Optional[str] = Query(default=None, description="Filter by priority"),
     assigned_to_me: bool = Query(default=False, description="Show only my assigned tickets"),
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=50, ge=1, le=100, description="Items per page"),
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TicketListResponse:
     """
     List all tickets (admin view).
@@ -266,8 +266,8 @@ async def get_ticket_details(
 async def add_ticket_response(
     ticket_id: UUID,
     request: AddTicketResponseRequest,
-    is_staff: bool = Query(default=False, description="Is this a staff response?"),
     db: Annotated[AsyncSession, Depends(get_db)],
+    is_staff: bool = Query(default=False, description="Is this a staff response?"),
 ) -> AddTicketResponseResponse:
     """
     Add a response to a ticket.

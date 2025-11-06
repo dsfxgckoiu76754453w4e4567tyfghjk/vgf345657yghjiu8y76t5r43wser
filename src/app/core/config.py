@@ -1,7 +1,7 @@
 """Application configuration management."""
 
 from typing import Literal
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,12 +25,19 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
 
-    # Database
-    database_url: str = Field(
-        default="postgresql+asyncpg://postgres:postgres@localhost:5432/shia_chatbot"
-    )
+    # Database - Separate Parameters (recommended for production)
+    database_host: str = Field(default="localhost")
+    database_port: int = Field(default=5433)
+    database_user: str = Field(default="postgres")
+    database_password: str = Field(default="postgres")
+    database_name: str = Field(default="shia_chatbot")
+    database_driver: str = Field(default="postgresql+asyncpg")
     database_pool_size: int = Field(default=20)
     database_max_overflow: int = Field(default=10)
+
+    # Database - Connection parameters (recommended for production)
+    # Note: Individual parameters are always used to build the connection URL
+    # This ensures better security and configuration management
 
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0")
@@ -91,9 +98,12 @@ class Settings(BaseSettings):
     guardrails_llm_provider: str = Field(default="openai")
     guardrails_llm_model: str = Field(default="gpt-4o-mini")
 
-    # Logging
+    # Logging (Standard v2.0)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="DEBUG")
     log_format: Literal["colored", "json"] = Field(default="colored")
+    log_timestamp: Literal["utc", "ir", "both"] = Field(default="both")
+    log_timestamp_precision: Literal[3, 6] = Field(default=6)  # 3=ms, 6=μs
+    log_color: Literal["auto", "true", "false"] = Field(default="auto")
     langfuse_enabled: bool = Field(default=False)
     langfuse_public_key: str | None = Field(default=None)
     langfuse_secret_key: str | None = Field(default=None)
@@ -130,11 +140,99 @@ class Settings(BaseSettings):
     smtp_password: str | None = Field(default=None)
     smtp_from_email: str = Field(default="noreply@example.com")
 
+    # Super Admin (for initial setup)
+    super_admin_email: str = Field(default="admin@wisqu.com")
+    super_admin_password: str = Field(default="ChangeMe123!")
+
     @field_validator("cors_origins")
     @classmethod
     def parse_cors_origins(cls, v: str) -> list[str]:
         """Parse comma-separated CORS origins."""
         return [origin.strip() for origin in v.split(",")]
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def set_debug_from_environment(cls, v, info):
+        """Automatically set debug based on environment if not explicitly set."""
+        if v is None:
+            environment = info.data.get("environment", "dev")
+            return environment == "dev"
+        return v
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def set_log_level_from_environment(cls, v, info):
+        """Automatically set log level based on environment if not explicitly set."""
+        if v is None:
+            environment = info.data.get("environment", "dev")
+            return {"dev": "DEBUG", "test": "INFO", "prod": "WARNING"}[environment]
+        return v
+
+    @field_validator("log_format", mode="before")
+    @classmethod
+    def set_log_format_from_environment(cls, v, info):
+        """Automatically set log format based on environment if not explicitly set."""
+        if v is None:
+            environment = info.data.get("environment", "dev")
+            return "colored" if environment == "dev" else "json"
+        return v
+
+    @field_validator("log_timestamp_precision", mode="before")
+    @classmethod
+    def convert_log_timestamp_precision(cls, v):
+        """Convert string to int for log_timestamp_precision."""
+        if isinstance(v, str):
+            return int(v)
+        return v
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self):
+        """Validate that production environments have secure secrets."""
+        if self.environment == "prod":
+            # Check JWT secret
+            if self.jwt_secret_key == "change-in-production":
+                raise ValueError(
+                    "JWT_SECRET_KEY must be changed in production environment"
+                )
+
+            # Warn about debug mode in production
+            if self.debug:
+                import warnings
+                warnings.warn(
+                    "DEBUG mode is enabled in production. This is not recommended.",
+                    UserWarning
+                )
+
+        return self
+
+    def get_database_url(self, database_name: str | None = None) -> str:
+        """
+        Build database URL from individual parameters.
+
+        Args:
+            database_name: Optional database name override (useful for connecting to 'postgres' db)
+
+        Returns:
+            str: Complete database URL
+        """
+        db_name = database_name if database_name is not None else self.database_name
+        return (
+            f"{self.database_driver}://{self.database_user}:{self.database_password}"
+            f"@{self.database_host}:{self.database_port}/{db_name}"
+        )
+
+    @property
+    def database_url(self) -> str:
+        """
+        Get the database URL as a computed property.
+
+        This ensures the URL is always constructed from individual parameters,
+        preventing environment variable override issues.
+
+        Returns:
+            str: Complete database URL
+        """
+        return self.get_database_url()
 
     @property
     def is_production(self) -> bool:
@@ -151,6 +249,22 @@ class Settings(BaseSettings):
         """Check if running in test."""
         return self.environment == "test"
 
+    @property
+    def show_docs(self) -> bool:
+        """Whether to show API documentation endpoints."""
+        return self.debug or self.environment != "prod"
+
 
 # Global settings instance
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Get the global settings instance.
+
+    This function is used for dependency injection in FastAPI.
+
+    Returns:
+        Settings: The global settings instance
+    """
+    return settings

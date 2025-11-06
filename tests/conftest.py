@@ -13,8 +13,8 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-# Test database URL
-TEST_DATABASE_URL = "postgresql+asyncpg://test:test@localhost:5432/test_db"
+# Test database URL - construct from settings with test database
+TEST_DATABASE_URL = settings.get_database_url("test_db")
 
 
 @pytest.fixture(scope="session")

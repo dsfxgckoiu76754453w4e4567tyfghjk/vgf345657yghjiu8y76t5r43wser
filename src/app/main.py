@@ -1,15 +1,24 @@
 """Main FastAPI application entry point."""
 
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.logging import setup_logging, get_logger
+from app.core.constants import (
+    APP_DESCRIPTION,
+    API_V1_PREFIX,
+    HTTPStatus,
+    HTTPStatusDetail,
+)
+from app.core.health import cleanup_health_checker, get_health_status
+from app.core.logging import get_logger, setup_logging
+from app.core.startup import startup_checks
+from app.core.stats import get_application_stats
 
 # Set up logging
 setup_logging()
@@ -30,19 +39,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         debug=settings.debug,
     )
 
+    # Run startup checks
+    try:
+        await startup_checks()
+    except Exception as e:
+        logger.error("startup_checks_failed", error=str(e))
+        if settings.is_production:
+            raise
+
     yield
 
     # Shutdown
     logger.info("application_shutdown")
+    await cleanup_health_checker()
 
 
 # Create FastAPI application
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="Production-grade comprehensive Shia Islamic knowledge chatbot",
-    docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc" if settings.debug else None,
+    description=APP_DESCRIPTION,
+    docs_url="/docs" if settings.show_docs else None,
+    redoc_url="/redoc" if settings.show_docs else None,
     lifespan=lifespan,
 )
 
@@ -64,32 +82,74 @@ if settings.is_production:
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str]:
+async def health_check(
+    check_services: bool = Query(
+        default=True,
+        description="Whether to check external service dependencies"
+    )
+) -> dict[str, Any]:
     """
-    Health check endpoint.
+    Health check endpoint with optional dependency checks.
+
+    Args:
+        check_services: If True, checks database, Redis, and Qdrant health
 
     Returns:
-        dict: Status message
+        dict: Comprehensive health status
     """
-    return {
-        "status": "healthy",
-        "environment": settings.environment,
-        "version": settings.app_version,
-    }
+    try:
+        health_data = await get_health_status(check_dependencies=check_services)
+        return health_data
+    except Exception as e:
+        logger.error("health_check_failed", error=str(e))
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+        }
+
+
+@app.get("/stats")
+async def stats_endpoint() -> dict[str, Any]:
+    """
+    Application statistics endpoint.
+
+    Returns:
+        dict: Application statistics including database and config info
+
+    Note:
+        Only available in development and test environments
+    """
+    if settings.is_production:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": HTTPStatusDetail.INSUFFICIENT_PERMISSIONS}
+        )
+
+    try:
+        stats = await get_application_stats()
+        return stats
+    except Exception as e:
+        logger.error("stats_endpoint_failed", error=str(e))
+        return {
+            "error": str(e),
+        }
 
 
 @app.get("/")
-async def root() -> dict[str, str]:
+async def root() -> dict[str, Any]:
     """
     Root endpoint.
 
     Returns:
-        dict: Welcome message
+        dict: Welcome message and API information
     """
     return {
         "message": "Shia Islamic Chatbot API",
         "version": settings.app_version,
-        "docs": "/docs" if settings.debug else "disabled in production",
+        "environment": settings.environment,
+        "docs": "/docs" if settings.show_docs else "disabled",
+        "health": "/health",
+        "api": API_V1_PREFIX,
     }
 
 
@@ -115,13 +175,13 @@ async def global_exception_handler(request, exc: Exception) -> JSONResponse:
     if settings.is_production:
         return JSONResponse(
             status_code=500,
-            content={"detail": "INTERNAL_SERVER_ERROR"},
+            content={"detail": HTTPStatus.INTERNAL_SERVER_ERROR},
         )
     else:
         return JSONResponse(
             status_code=500,
             content={
-                "detail": "INTERNAL_SERVER_ERROR",
+                "detail": HTTPStatus.INTERNAL_SERVER_ERROR,
                 "error": str(exc),
                 "type": type(exc).__name__,
             },
@@ -131,7 +191,7 @@ async def global_exception_handler(request, exc: Exception) -> JSONResponse:
 # Include API routers
 from app.api.v1 import api_router
 
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix=API_V1_PREFIX)
 
 if __name__ == "__main__":
     import uvicorn

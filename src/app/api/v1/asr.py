@@ -12,7 +12,7 @@ from app.services.asr_service import ASRService
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/asr", tags=["asr"])
+router = APIRouter()
 
 
 # ============================================================================
