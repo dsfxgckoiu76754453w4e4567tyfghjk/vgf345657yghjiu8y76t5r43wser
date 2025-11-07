@@ -153,6 +153,34 @@ async def detailed_health_check(
             "error": str(e),
         }
 
+    # Check ASR (Automatic Speech Recognition)
+    try:
+        if settings.asr_enabled:
+            from app.services.asr_service import asr_service
+
+            asr_health = asr_service.health_check()
+            if asr_health["healthy"]:
+                services["asr"] = {
+                    "status": "healthy",
+                    "provider": asr_health.get("provider"),
+                    "language": settings.asr_language,
+                }
+            else:
+                services["asr"] = {
+                    "status": "unhealthy",
+                    "provider": asr_health.get("provider"),
+                    "error": asr_health.get("error"),
+                }
+        else:
+            services["asr"] = {
+                "status": "not_configured",
+            }
+    except Exception as e:
+        services["asr"] = {
+            "status": "error",
+            "error": str(e),
+        }
+
     # Overall status
     overall_status = "healthy"
     if any(svc.get("status") == "unhealthy" for svc in services.values()):

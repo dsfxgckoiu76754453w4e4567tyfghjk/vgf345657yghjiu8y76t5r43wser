@@ -43,10 +43,23 @@ def upgrade() -> None:
         sa.Column('mime_type', sa.String(100), nullable=False),
         sa.Column('file_size_bytes', sa.Integer, nullable=False),
 
+        # Purpose/Use Case
+        sa.Column('purpose', sa.String(50), nullable=True),  # rag_corpus, ticket_attachment, generated_image, user_upload, islamic_resource
+
         # File attributes
         sa.Column('width', sa.Integer, nullable=True),
         sa.Column('height', sa.Integer, nullable=True),
         sa.Column('duration_seconds', sa.Integer, nullable=True),
+
+        # Audio-specific metadata (for Islamic resources)
+        sa.Column('audio_category', sa.String(50), nullable=True),  # quran, hadith, dua, mafatih, ziyarat, lecture, user_voice
+        sa.Column('reciter_name', sa.String(100), nullable=True),  # Name of Quran reciter or speaker
+        sa.Column('audio_language', sa.String(10), nullable=True),  # ar, fa, en, etc.
+        sa.Column('quran_surah', sa.Integer, nullable=True),  # Quran chapter number (1-114)
+        sa.Column('quran_ayah_start', sa.Integer, nullable=True),  # Starting verse number
+        sa.Column('quran_ayah_end', sa.Integer, nullable=True),  # Ending verse number
+        sa.Column('transcript_text', sa.String, nullable=True),  # ASR transcribed text
+        sa.Column('audio_quality', sa.String(20), nullable=True),  # low, medium, high, hd
 
         # Access control
         sa.Column('is_public', sa.Boolean, default=False),

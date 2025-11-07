@@ -54,12 +54,14 @@ def main():
     print("-" * 60)
 
     buckets = [
-        (settings.minio_bucket_images, "Generated AI images (public)"),
-        (settings.minio_bucket_documents, "RAG documents (private)"),
-        (settings.minio_bucket_audio, "Audio files (private, 7-day retention)"),
-        (settings.minio_bucket_uploads, "User uploads (private, 90-day retention)"),
-        (settings.minio_bucket_temp, "Temp processing (private, 24-hour retention)"),
-        (settings.minio_bucket_backups, "Backups (private, 30-day retention)"),
+        (settings.minio_bucket_images, "AI-generated images (public, permanent)"),
+        (settings.minio_bucket_documents, "RAG corpus & user PDFs (private, permanent)"),
+        (settings.minio_bucket_audio_resources, "Quran, Mafatih, Duas (public, permanent)"),
+        (settings.minio_bucket_audio_user, "User voice messages (private, 30-day retention)"),
+        (settings.minio_bucket_audio_transcripts, "ASR processed audio (private, 7-day retention)"),
+        (settings.minio_bucket_uploads, "Ticket attachments & uploads (private, 90-day retention)"),
+        (settings.minio_bucket_temp, "Temporary processing (private, 24-hour retention)"),
+        (settings.minio_bucket_backups, "System backups (private, 30-day retention)"),
     ]
 
     for bucket_name, description in buckets:

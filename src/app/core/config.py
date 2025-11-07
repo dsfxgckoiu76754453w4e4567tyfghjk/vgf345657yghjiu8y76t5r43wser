@@ -214,12 +214,22 @@ class Settings(BaseSettings):
     minio_public_url: str = Field(default="http://localhost:9000")  # For public URLs
 
     # MinIO Bucket Names
-    minio_bucket_images: str = Field(default="wisqu-images")
-    minio_bucket_documents: str = Field(default="wisqu-documents")
-    minio_bucket_audio: str = Field(default="wisqu-audio")
-    minio_bucket_uploads: str = Field(default="wisqu-uploads")
-    minio_bucket_temp: str = Field(default="wisqu-temp")
-    minio_bucket_backups: str = Field(default="wisqu-backups")
+    minio_bucket_images: str = Field(default="wisqu-images")  # AI-generated images (public)
+    minio_bucket_documents: str = Field(default="wisqu-documents")  # RAG docs, user PDFs
+    minio_bucket_audio_resources: str = Field(
+        default="wisqu-audio-resources"
+    )  # Quran, Mafatih, Duas (public)
+    minio_bucket_audio_user: str = Field(
+        default="wisqu-audio-user"
+    )  # User voice messages (private)
+    minio_bucket_audio_transcripts: str = Field(
+        default="wisqu-audio-transcripts"
+    )  # ASR processed audio
+    minio_bucket_uploads: str = Field(
+        default="wisqu-uploads"
+    )  # General uploads, ticket attachments
+    minio_bucket_temp: str = Field(default="wisqu-temp")  # Temporary processing
+    minio_bucket_backups: str = Field(default="wisqu-backups")  # System backups
 
     # Storage Limits & Quotas
     storage_max_file_size_mb: int = Field(default=50)  # Max file size in MB
@@ -231,6 +241,16 @@ class Settings(BaseSettings):
     storage_quota_free: int = Field(default=100)  # 100MB for free tier
     storage_quota_premium: int = Field(default=5120)  # 5GB for premium
     storage_quota_unlimited: int = Field(default=51200)  # 50GB for unlimited
+
+    # ASR (Automatic Speech Recognition) Settings
+    asr_enabled: bool = Field(default=True)
+    asr_provider: Literal["google", "openai", "whisper"] = Field(default="google")
+    asr_language: str = Field(default="fa-IR")  # Persian/Farsi
+    asr_alternative_languages: str = Field(
+        default="ar-SA,en-US"
+    )  # Arabic, English for fallback
+    asr_max_audio_duration_seconds: int = Field(default=600)  # 10 minutes
+    google_asr_credentials_path: str | None = Field(default=None)  # Path to JSON credentials
 
     @field_validator("cors_origins")
     @classmethod

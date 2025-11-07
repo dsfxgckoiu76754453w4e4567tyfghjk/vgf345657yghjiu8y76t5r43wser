@@ -64,27 +64,35 @@ class MinIOStorageService:
         buckets = {
             settings.minio_bucket_images: {
                 "public": True,
-                "lifecycle_days": None,  # Keep forever
+                "lifecycle_days": None,  # AI-generated images (keep forever)
             },
             settings.minio_bucket_documents: {
                 "public": False,
-                "lifecycle_days": None,  # Keep forever
+                "lifecycle_days": None,  # RAG corpus, user PDFs (keep forever)
             },
-            settings.minio_bucket_audio: {
+            settings.minio_bucket_audio_resources: {
+                "public": True,
+                "lifecycle_days": None,  # Quran, Mafatih, Duas (keep forever, public)
+            },
+            settings.minio_bucket_audio_user: {
                 "public": False,
-                "lifecycle_days": 7,  # Delete after 7 days
+                "lifecycle_days": 30,  # User voice messages (30-day retention)
+            },
+            settings.minio_bucket_audio_transcripts: {
+                "public": False,
+                "lifecycle_days": 7,  # ASR processed audio (7-day retention)
             },
             settings.minio_bucket_uploads: {
                 "public": False,
-                "lifecycle_days": 90,  # Delete after 90 days
+                "lifecycle_days": 90,  # General uploads, ticket attachments (90-day retention)
             },
             settings.minio_bucket_temp: {
                 "public": False,
-                "lifecycle_days": 1,  # Delete after 24 hours
+                "lifecycle_days": 1,  # Temporary processing (24-hour retention)
             },
             settings.minio_bucket_backups: {
                 "public": False,
-                "lifecycle_days": 30,  # Delete after 30 days
+                "lifecycle_days": 30,  # System backups (30-day retention)
             },
         }
 
@@ -520,6 +528,278 @@ class MinIOStorageService:
                 error=str(e),
             )
             raise
+
+    # ========================================================================
+    # Helper Methods for Common Storage Patterns
+    # ========================================================================
+
+    async def upload_rag_document(
+        self,
+        file_data: bytes | BinaryIO,
+        filename: str,
+        content_type: str = "application/pdf",
+        metadata: Optional[dict[str, str]] = None,
+    ) -> dict[str, str]:
+        """
+        Upload document to RAG corpus.
+
+        Args:
+            file_data: File data (bytes or file-like object)
+            filename: Original filename
+            content_type: MIME type
+            metadata: Optional metadata (e.g., document category, tags)
+
+        Returns:
+            Upload result with URL and object info
+        """
+        final_metadata = metadata or {}
+        final_metadata.update({
+            "purpose": "rag_corpus",
+            "original_filename": filename,
+        })
+
+        return await self.upload_file(
+            bucket=settings.minio_bucket_documents,
+            object_name=f"rag/{filename}",
+            file_data=file_data,
+            content_type=content_type,
+            metadata=final_metadata,
+        )
+
+    async def upload_islamic_audio(
+        self,
+        file_data: bytes | BinaryIO,
+        filename: str,
+        audio_category: Literal["quran", "hadith", "dua", "mafatih", "ziyarat", "lecture"],
+        reciter_name: Optional[str] = None,
+        language: str = "ar",
+        surah: Optional[int] = None,
+        ayah_start: Optional[int] = None,
+        ayah_end: Optional[int] = None,
+        metadata: Optional[dict[str, str]] = None,
+    ) -> dict[str, str]:
+        """
+        Upload Islamic audio resource (Quran, Duas, Mafatih, etc.).
+
+        Args:
+            file_data: Audio file data
+            filename: Original filename
+            audio_category: Type of audio (quran, dua, mafatih, etc.)
+            reciter_name: Name of reciter/speaker
+            language: Audio language (ar, fa, en, etc.)
+            surah: Quran chapter number (1-114) if applicable
+            ayah_start: Starting verse number if applicable
+            ayah_end: Ending verse number if applicable
+            metadata: Additional metadata
+
+        Returns:
+            Upload result with public URL
+        """
+        final_metadata = metadata or {}
+        final_metadata.update({
+            "purpose": "islamic_resource",
+            "audio_category": audio_category,
+            "language": language,
+        })
+
+        if reciter_name:
+            final_metadata["reciter_name"] = reciter_name
+        if surah:
+            final_metadata["quran_surah"] = str(surah)
+        if ayah_start:
+            final_metadata["quran_ayah_start"] = str(ayah_start)
+        if ayah_end:
+            final_metadata["quran_ayah_end"] = str(ayah_end)
+
+        # Organize by category
+        object_name = f"{audio_category}/{filename}"
+
+        result = await self.upload_file(
+            bucket=settings.minio_bucket_audio_resources,
+            object_name=object_name,
+            file_data=file_data,
+            content_type="audio/mpeg",  # Default to MP3
+            metadata=final_metadata,
+        )
+
+        # Generate public URL (bucket is public)
+        result["public_url"] = f"{settings.minio_public_url}/{settings.minio_bucket_audio_resources}/{object_name}"
+
+        return result
+
+    async def upload_user_voice_message(
+        self,
+        file_data: bytes | BinaryIO,
+        user_id: UUID,
+        conversation_id: Optional[UUID] = None,
+        should_transcribe: bool = True,
+    ) -> dict[str, any]:
+        """
+        Upload user voice message and optionally transcribe it.
+
+        Args:
+            file_data: Audio file data
+            user_id: User ID
+            conversation_id: Optional conversation ID
+            should_transcribe: Whether to transcribe the audio
+
+        Returns:
+            Upload result with optional transcript
+        """
+        import uuid
+        from datetime import datetime
+
+        # Generate unique filename
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        object_name = f"user_{user_id}/{timestamp}_{uuid.uuid4().hex[:8]}.mp3"
+
+        metadata = {
+            "purpose": "user_voice_message",
+            "user_id": str(user_id),
+        }
+        if conversation_id:
+            metadata["conversation_id"] = str(conversation_id)
+
+        # Upload audio file
+        upload_result = await self.upload_file(
+            bucket=settings.minio_bucket_audio_user,
+            object_name=object_name,
+            file_data=file_data,
+            content_type="audio/mpeg",
+            metadata=metadata,
+            user_id=user_id,
+        )
+
+        result = {**upload_result}
+
+        # Optionally transcribe
+        if should_transcribe:
+            try:
+                from app.services.asr_service import asr_service
+
+                # Get audio data if we uploaded bytes
+                if isinstance(file_data, bytes):
+                    audio_data = file_data
+                else:
+                    file_data.seek(0)
+                    audio_data = file_data.read()
+
+                # Transcribe
+                transcript_result = await asr_service.transcribe_audio(
+                    audio_data=audio_data,
+                    audio_format="mp3",
+                    language="fa",  # Default to Persian, can be detected
+                )
+
+                result["transcript"] = transcript_result
+
+                logger.info(
+                    "user_voice_transcribed",
+                    user_id=str(user_id),
+                    text_length=len(transcript_result["text"]),
+                )
+
+            except Exception as e:
+                logger.error(
+                    "voice_transcription_failed",
+                    user_id=str(user_id),
+                    error=str(e),
+                )
+                result["transcript_error"] = str(e)
+
+        return result
+
+    async def upload_ticket_attachment(
+        self,
+        file_data: bytes | BinaryIO,
+        ticket_id: UUID,
+        user_id: UUID,
+        filename: str,
+        content_type: str,
+    ) -> dict[str, str]:
+        """
+        Upload ticket attachment file.
+
+        Args:
+            file_data: File data
+            ticket_id: Ticket ID
+            user_id: User ID who uploaded
+            filename: Original filename
+            content_type: MIME type
+
+        Returns:
+            Upload result with access URL
+        """
+        object_name = f"tickets/{ticket_id}/{filename}"
+
+        metadata = {
+            "purpose": "ticket_attachment",
+            "ticket_id": str(ticket_id),
+            "user_id": str(user_id),
+            "original_filename": filename,
+        }
+
+        return await self.upload_file(
+            bucket=settings.minio_bucket_uploads,
+            object_name=object_name,
+            file_data=file_data,
+            content_type=content_type,
+            metadata=metadata,
+            user_id=user_id,
+        )
+
+    async def upload_generated_image(
+        self,
+        file_data: bytes | BinaryIO,
+        prompt: str,
+        model: str,
+        user_id: Optional[UUID] = None,
+        conversation_id: Optional[UUID] = None,
+    ) -> dict[str, str]:
+        """
+        Upload AI-generated image (from DALL-E, Flux, Gemini, etc.).
+
+        Args:
+            file_data: Image file data
+            prompt: Generation prompt
+            model: Model used for generation
+            user_id: Optional user ID
+            conversation_id: Optional conversation ID
+
+        Returns:
+            Upload result with public URL
+        """
+        import uuid
+        from datetime import datetime
+
+        # Generate unique filename
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        image_id = uuid.uuid4().hex[:12]
+        object_name = f"generated/{timestamp}_{image_id}.png"
+
+        metadata = {
+            "purpose": "generated_image",
+            "model": model,
+            "prompt": prompt[:500],  # Truncate long prompts
+        }
+        if user_id:
+            metadata["user_id"] = str(user_id)
+        if conversation_id:
+            metadata["conversation_id"] = str(conversation_id)
+
+        result = await self.upload_file(
+            bucket=settings.minio_bucket_images,
+            object_name=object_name,
+            file_data=file_data,
+            content_type="image/png",
+            metadata=metadata,
+            user_id=user_id,
+        )
+
+        # Generate public URL (images bucket is public)
+        result["public_url"] = f"{settings.minio_public_url}/{settings.minio_bucket_images}/{object_name}"
+
+        return result
 
     def health_check(self) -> dict:
         """

@@ -52,10 +52,41 @@ class StoredFile(Base):
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
 
+    # Purpose/Use Case (for organizational purposes)
+    purpose: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True
+    )  # rag_corpus, ticket_attachment, generated_image, user_upload, islamic_resource
+
     # File attributes
     width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # For images
     height: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # For images
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # For audio/video
+
+    # Audio-specific metadata (for Islamic resources)
+    audio_category: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True
+    )  # quran, hadith, dua, mafatih, ziyarat, lecture, user_voice
+    reciter_name: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )  # Name of Quran reciter or speaker
+    audio_language: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True
+    )  # ar, fa, en, etc.
+    quran_surah: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )  # Quran chapter number (1-114)
+    quran_ayah_start: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )  # Starting verse number
+    quran_ayah_end: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )  # Ending verse number
+    transcript_text: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )  # ASR transcribed text
+    audio_quality: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )  # low, medium, high, hd
 
     # Access control
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
