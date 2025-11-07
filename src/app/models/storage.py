@@ -18,10 +18,20 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.mixins import (
+    EnvironmentPromotionMixin,
+    SoftDeleteMixin,
+    TimestampMixin,
+)
 
 
-class StoredFile(Base):
-    """Files stored in MinIO object storage."""
+class StoredFile(Base, EnvironmentPromotionMixin, TimestampMixin, SoftDeleteMixin):
+    """
+    Files stored in MinIO object storage.
+
+    Environment-aware and promotable between environments (dev → stage → prod).
+    Supports test data detection and automatic environment isolation.
+    """
 
     __tablename__ = "stored_files"
 
@@ -112,16 +122,8 @@ class StoredFile(Base):
     # Additional metadata
     metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    # NOTE: Timestamps (created_at, updated_at) provided by TimestampMixin
+    # NOTE: Soft delete fields (deleted_at, is_deleted) provided by SoftDeleteMixin
 
     # Constraints
     __table_args__ = (
@@ -137,8 +139,12 @@ class StoredFile(Base):
         return f"<StoredFile(id={self.id}, filename={self.filename}, bucket={self.bucket})>"
 
 
-class UserStorageQuota(Base):
-    """Track user storage quotas and usage."""
+class UserStorageQuota(Base, EnvironmentPromotionMixin, TimestampMixin):
+    """
+    Track user storage quotas and usage.
+
+    Environment-aware to track usage separately in dev, stage, and prod.
+    """
 
     __tablename__ = "user_storage_quotas"
 
@@ -166,13 +172,7 @@ class UserStorageQuota(Base):
     # Cost tracking
     total_storage_cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
 
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    # NOTE: Timestamps (created_at, updated_at) provided by TimestampMixin
 
     # Constraints
     __table_args__ = (
