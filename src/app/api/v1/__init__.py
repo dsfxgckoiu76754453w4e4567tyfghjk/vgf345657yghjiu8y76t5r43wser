@@ -14,6 +14,7 @@ from app.api.v1 import (
     feedback,
     health,
     images,
+    jobs,
     leaderboard,
     presets,
     storage,
@@ -26,6 +27,9 @@ api_router = APIRouter()
 
 # Health checks (no auth required)
 api_router.include_router(health.router, prefix="/health", tags=["Health & Monitoring"])
+
+# Background job status (no auth required for now - can add auth later)
+api_router.include_router(jobs.router, prefix="/jobs", tags=["Background Jobs"])
 
 # Include all v1 routers
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])

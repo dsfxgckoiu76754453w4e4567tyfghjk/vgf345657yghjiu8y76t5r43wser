@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     redis_cache_db: int = Field(default=1)
     redis_queue_db: int = Field(default=2)
 
+    # Celery
+    celery_broker_url: str | None = Field(default=None)  # Auto-configured from redis_url
+    celery_result_backend: str | None = Field(default=None)  # Auto-configured from database_url
+    celery_task_always_eager: bool = Field(default=False)  # Sync execution for testing
+    celery_task_eager_propagates: bool = Field(default=True)  # Propagate exceptions in eager mode
+
     # Qdrant
     qdrant_url: str = Field(default="http://localhost:6333")
     qdrant_api_key: str | None = Field(default=None)
@@ -338,6 +344,27 @@ class Settings(BaseSettings):
                     "DEBUG mode is enabled in production. This is not recommended.",
                     UserWarning
                 )
+
+        return self
+
+    @model_validator(mode="after")
+    def configure_celery_urls(self):
+        """Auto-configure Celery broker and result backend from Redis and Database URLs."""
+        # Auto-configure Celery broker from Redis if not explicitly set
+        if self.celery_broker_url is None:
+            redis_db = self.get_redis_db("queue")  # Use queue DB for Celery
+            # Parse base Redis URL and add queue DB
+            if "//" in self.redis_url:
+                base_url = self.redis_url.rsplit("/", 1)[0]
+            else:
+                base_url = self.redis_url
+            self.celery_broker_url = f"{base_url}/{redis_db}"
+
+        # Auto-configure Celery result backend from PostgreSQL if not explicitly set
+        if self.celery_result_backend is None:
+            # Use synchronous psycopg2 driver for Celery result backend
+            sync_url = self.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+            self.celery_result_backend = f"db+{sync_url}"
 
         return self
 
