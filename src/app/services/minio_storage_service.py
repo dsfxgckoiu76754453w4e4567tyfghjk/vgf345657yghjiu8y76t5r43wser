@@ -59,9 +59,21 @@ class MinIOStorageService:
             logger.error("minio_initialization_failed", error=str(e))
             raise
 
+    def _get_env_bucket_name(self, base_bucket: str) -> str:
+        """
+        Get environment-prefixed bucket name.
+
+        Examples:
+            dev:   wisqu-images  → dev-wisqu-images
+            stage: wisqu-images  → stage-wisqu-images
+            prod:  wisqu-images  → prod-wisqu-images
+        """
+        return settings.get_bucket_name(base_bucket)
+
     def _initialize_buckets(self):
         """Create buckets if they don't exist and set policies."""
-        buckets = {
+        # Base bucket configurations (without environment prefix)
+        base_buckets = {
             settings.minio_bucket_images: {
                 "public": True,
                 "lifecycle_days": None,  # AI-generated images (keep forever)
@@ -96,12 +108,21 @@ class MinIOStorageService:
             },
         }
 
-        for bucket_name, config in buckets.items():
+        # Create environment-prefixed buckets
+        for base_bucket, config in base_buckets.items():
+            # Add environment prefix
+            bucket_name = self._get_env_bucket_name(base_bucket)
+
             try:
                 # Create bucket if it doesn't exist
                 if not self.client.bucket_exists(bucket_name):
                     self.client.make_bucket(bucket_name)
-                    logger.info("bucket_created", bucket_name=bucket_name)
+                    logger.info(
+                        "bucket_created",
+                        bucket_name=bucket_name,
+                        base_bucket=base_bucket,
+                        environment=settings.environment
+                    )
 
                 # Set lifecycle policy if specified
                 if config["lifecycle_days"]:
@@ -179,10 +200,11 @@ class MinIOStorageService:
         user_id: Optional[UUID] = None,
     ) -> dict[str, str]:
         """
-        Upload file to MinIO.
+        Upload file to MinIO with environment-specific bucket.
 
         Args:
-            bucket: Bucket name (use settings.minio_bucket_*)
+            bucket: Base bucket name (use settings.minio_bucket_*)
+                   Will be automatically prefixed with environment
             object_name: Object path/name in bucket
             file_data: File data as bytes or file-like object
             content_type: MIME type
@@ -195,9 +217,16 @@ class MinIOStorageService:
         Raises:
             ValueError: If MinIO is disabled or file size exceeds limit
             S3Error: If upload fails
+
+        Note:
+            Bucket name is automatically prefixed with environment.
+            Example: "wisqu-images" becomes "dev-wisqu-images" in dev env
         """
         if not self.client:
             raise ValueError("MinIO is not enabled")
+
+        # Add environment prefix to bucket name
+        env_bucket = self._get_env_bucket_name(bucket)
 
         try:
             # Convert bytes to BytesIO if needed
@@ -229,9 +258,12 @@ class MinIOStorageService:
             if user_id:
                 final_metadata["user_id"] = str(user_id)
 
-            # Upload to MinIO
+            # Add environment tag to metadata
+            final_metadata["environment"] = settings.environment
+
+            # Upload to MinIO (using environment-prefixed bucket)
             result = self.client.put_object(
-                bucket,
+                env_bucket,
                 object_name,
                 file_obj,
                 length=file_size,
@@ -241,15 +273,17 @@ class MinIOStorageService:
 
             # Generate URL
             if bucket == settings.minio_bucket_images:
-                # Public URL for images
-                url = f"{settings.minio_public_url}/{bucket}/{object_name}"
+                # Public URL for images (use env bucket)
+                url = f"{settings.minio_public_url}/{env_bucket}/{object_name}"
             else:
                 # Pre-signed URL for private files (1 hour expiry)
                 url = self.get_presigned_url(bucket, object_name, expires=3600)
 
             logger.info(
                 "file_uploaded",
-                bucket=bucket,
+                bucket=env_bucket,
+                base_bucket=bucket,
+                environment=settings.environment,
                 object_name=object_name,
                 size_bytes=file_size,
                 user_id=str(user_id) if user_id else None,
@@ -257,16 +291,19 @@ class MinIOStorageService:
 
             return {
                 "url": url,
-                "bucket": bucket,
+                "bucket": bucket,  # Return base bucket name for consistency
+                "env_bucket": env_bucket,  # Also return environment bucket
                 "object_name": object_name,
                 "size": file_size,
                 "etag": result.etag,
+                "environment": settings.environment,
             }
 
         except S3Error as e:
             logger.error(
                 "file_upload_failed",
-                bucket=bucket,
+                bucket=env_bucket,
+                base_bucket=bucket,
                 object_name=object_name,
                 error=str(e),
             )
@@ -283,7 +320,7 @@ class MinIOStorageService:
         Generate pre-signed URL for temporary access.
 
         Args:
-            bucket: Bucket name
+            bucket: Base bucket name (will be environment-prefixed)
             object_name: Object path/name
             expires: Expiration time in seconds (default 1 hour)
             method: HTTP method (GET for download, PUT for upload)
@@ -294,10 +331,13 @@ class MinIOStorageService:
         if not self.client:
             raise ValueError("MinIO is not enabled")
 
+        # Add environment prefix
+        env_bucket = self._get_env_bucket_name(bucket)
+
         try:
             if method == "GET":
                 url = self.client.presigned_get_object(
-                    bucket,
+                    env_bucket,
                     object_name,
                     expires=timedelta(seconds=expires),
                 )
@@ -324,7 +364,7 @@ class MinIOStorageService:
         Download file from MinIO.
 
         Args:
-            bucket: Bucket name
+            bucket: Base bucket name (will be environment-prefixed)
             object_name: Object path/name
 
         Returns:
@@ -333,15 +373,19 @@ class MinIOStorageService:
         if not self.client:
             raise ValueError("MinIO is not enabled")
 
+        # Add environment prefix
+        env_bucket = self._get_env_bucket_name(bucket)
+
         try:
-            response = self.client.get_object(bucket, object_name)
+            response = self.client.get_object(env_bucket, object_name)
             data = response.read()
             response.close()
             response.release_conn()
 
             logger.info(
                 "file_downloaded",
-                bucket=bucket,
+                bucket=env_bucket,
+                base_bucket=bucket,
                 object_name=object_name,
                 size_bytes=len(data),
             )
@@ -351,7 +395,8 @@ class MinIOStorageService:
         except S3Error as e:
             logger.error(
                 "file_download_failed",
-                bucket=bucket,
+                bucket=env_bucket,
+                base_bucket=bucket,
                 object_name=object_name,
                 error=str(e),
             )
@@ -362,7 +407,7 @@ class MinIOStorageService:
         Delete file from MinIO.
 
         Args:
-            bucket: Bucket name
+            bucket: Base bucket name (will be environment-prefixed)
             object_name: Object path/name
 
         Returns:
@@ -371,12 +416,16 @@ class MinIOStorageService:
         if not self.client:
             raise ValueError("MinIO is not enabled")
 
+        # Add environment prefix
+        env_bucket = self._get_env_bucket_name(bucket)
+
         try:
-            self.client.remove_object(bucket, object_name)
+            self.client.remove_object(env_bucket, object_name)
 
             logger.info(
                 "file_deleted",
-                bucket=bucket,
+                bucket=env_bucket,
+                base_bucket=bucket,
                 object_name=object_name,
             )
 
@@ -385,7 +434,8 @@ class MinIOStorageService:
         except S3Error as e:
             logger.error(
                 "file_deletion_failed",
-                bucket=bucket,
+                bucket=env_bucket,
+                base_bucket=bucket,
                 object_name=object_name,
                 error=str(e),
             )

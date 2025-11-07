@@ -252,6 +252,34 @@ class Settings(BaseSettings):
     asr_max_audio_duration_seconds: int = Field(default=600)  # 10 minutes
     google_asr_credentials_path: str | None = Field(default=None)  # Path to JSON credentials
 
+    # Environment-Specific Settings
+    environment_data_retention_days: int = Field(
+        default=30,
+        description="Data retention in days (auto-configured by environment)"
+    )
+    environment_allow_test_accounts: bool = Field(
+        default=True,
+        description="Allow test account creation (auto-configured by environment)"
+    )
+    environment_auto_cleanup_enabled: bool = Field(
+        default=True,
+        description="Enable automatic data cleanup (auto-configured by environment)"
+    )
+    environment_cleanup_schedule: str = Field(
+        default="0 2 * * *",  # 2 AM daily
+        description="Cron schedule for cleanup job"
+    )
+
+    # Promotion Settings
+    promotion_enabled: bool = Field(default=True)
+    promotion_require_approval: bool = Field(default=True)
+    promotion_allowed_paths: str = Field(
+        default="dev->stage,stage->prod,dev->prod",
+        description="Comma-separated allowed promotion paths"
+    )
+    promotion_max_items_per_batch: int = Field(default=100)
+    promotion_rollback_window_hours: int = Field(default=24)
+
     @field_validator("cors_origins")
     @classmethod
     def parse_cors_origins(cls, v: str) -> list[str]:
@@ -310,6 +338,44 @@ class Settings(BaseSettings):
                     "DEBUG mode is enabled in production. This is not recommended.",
                     UserWarning
                 )
+
+        return self
+
+    @model_validator(mode="after")
+    def configure_environment_settings(self):
+        """Auto-configure environment-specific settings based on environment."""
+        # Configure data retention based on environment
+        retention_map = {
+            "dev": 30,  # 30 days for dev
+            "test": 30,  # 30 days for test
+            "stage": 90,  # 90 days for stage
+            "prod": 365,  # 1 year for prod (but manual delete still needed)
+        }
+        if not hasattr(self, '_retention_overridden'):
+            self.environment_data_retention_days = retention_map.get(
+                self.environment,
+                self.environment_data_retention_days
+            )
+
+        # Configure test account creation
+        if self.environment == "prod":
+            # In prod, test accounts allowed but audited heavily
+            self.environment_allow_test_accounts = True
+        else:
+            self.environment_allow_test_accounts = True
+
+        # Configure auto-cleanup
+        cleanup_map = {
+            "dev": True,  # Aggressive cleanup in dev
+            "test": True,  # Aggressive cleanup in test
+            "stage": True,  # Moderate cleanup in stage
+            "prod": False,  # No auto-cleanup in prod (manual only)
+        }
+        if not hasattr(self, '_cleanup_overridden'):
+            self.environment_auto_cleanup_enabled = cleanup_map.get(
+                self.environment,
+                self.environment_auto_cleanup_enabled
+            )
 
         return self
 
@@ -380,6 +446,74 @@ class Settings(BaseSettings):
     def show_docs(self) -> bool:
         """Whether to show API documentation endpoints."""
         return self.debug or self.environment != "prod"
+
+    # ========================================================================
+    # Environment Resource Naming Helpers
+    # ========================================================================
+
+    def get_env_prefixed_name(self, base_name: str) -> str:
+        """
+        Get environment-prefixed resource name.
+
+        Examples:
+            >>> settings.get_env_prefixed_name("wisqu-images")
+            "dev-wisqu-images"  # In dev environment
+            "prod-wisqu-images"  # In prod environment
+        """
+        return f"{self.environment}-{base_name}"
+
+    def get_collection_name(self, base_collection: str) -> str:
+        """
+        Get environment-specific Qdrant collection name.
+
+        Examples:
+            >>> settings.get_collection_name("islamic_knowledge")
+            "islamic_knowledge_dev"  # In dev environment
+        """
+        return f"{base_collection}_{self.environment}"
+
+    def get_bucket_name(self, base_bucket: str) -> str:
+        """
+        Get environment-prefixed MinIO bucket name.
+
+        Examples:
+            >>> settings.get_bucket_name("wisqu-images")
+            "dev-wisqu-images"  # In dev environment
+        """
+        return self.get_env_prefixed_name(base_bucket)
+
+    def get_redis_db(self, purpose: str) -> int:
+        """
+        Get environment-specific Redis DB number.
+
+        Uses different DB ranges for each environment:
+        - dev: 0-2
+        - test: 3-5
+        - stage: 6-8
+        - prod: 9-11
+
+        Examples:
+            >>> settings.get_redis_db("cache")
+            0  # In dev environment
+            6  # In stage environment
+        """
+        env_offsets = {
+            "dev": 0,
+            "test": 3,
+            "stage": 6,
+            "prod": 9,
+        }
+
+        purpose_offsets = {
+            "default": 0,
+            "cache": 1,
+            "queue": 2,
+        }
+
+        base_offset = env_offsets.get(self.environment, 0)
+        purpose_offset = purpose_offsets.get(purpose, 0)
+
+        return base_offset + purpose_offset
 
 
 # Global settings instance
