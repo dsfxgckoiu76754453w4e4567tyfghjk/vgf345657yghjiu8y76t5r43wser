@@ -204,6 +204,34 @@ class Settings(BaseSettings):
     super_admin_email: str = Field(default="admin@wisqu.com")
     super_admin_password: str = Field(default="ChangeMe123!")
 
+    # MinIO Object Storage
+    minio_enabled: bool = Field(default=True)
+    minio_endpoint: str = Field(default="localhost:9000")
+    minio_access_key: str = Field(default="minioadmin")
+    minio_secret_key: str = Field(default="minioadmin")
+    minio_secure: bool = Field(default=False)  # True for HTTPS
+    minio_region: str = Field(default="us-east-1")
+    minio_public_url: str = Field(default="http://localhost:9000")  # For public URLs
+
+    # MinIO Bucket Names
+    minio_bucket_images: str = Field(default="wisqu-images")
+    minio_bucket_documents: str = Field(default="wisqu-documents")
+    minio_bucket_audio: str = Field(default="wisqu-audio")
+    minio_bucket_uploads: str = Field(default="wisqu-uploads")
+    minio_bucket_temp: str = Field(default="wisqu-temp")
+    minio_bucket_backups: str = Field(default="wisqu-backups")
+
+    # Storage Limits & Quotas
+    storage_max_file_size_mb: int = Field(default=50)  # Max file size in MB
+    storage_max_image_size_mb: int = Field(default=10)
+    storage_max_audio_size_mb: int = Field(default=25)
+    storage_max_document_size_mb: int = Field(default=20)
+
+    # User Storage Quotas (in MB)
+    storage_quota_free: int = Field(default=100)  # 100MB for free tier
+    storage_quota_premium: int = Field(default=5120)  # 5GB for premium
+    storage_quota_unlimited: int = Field(default=51200)  # 50GB for unlimited
+
     @field_validator("cors_origins")
     @classmethod
     def parse_cors_origins(cls, v: str) -> list[str]:

@@ -126,6 +126,33 @@ async def detailed_health_check(
             "error": str(e),
         }
 
+    # Check MinIO object storage
+    try:
+        if settings.minio_enabled:
+            from app.services.minio_storage_service import minio_storage
+
+            health = minio_storage.health_check()
+            if health["healthy"]:
+                services["minio"] = {
+                    "status": "healthy",
+                    "endpoint": settings.minio_endpoint,
+                }
+            else:
+                services["minio"] = {
+                    "status": "unhealthy",
+                    "endpoint": settings.minio_endpoint,
+                    "error": health.get("error"),
+                }
+        else:
+            services["minio"] = {
+                "status": "not_configured",
+            }
+    except Exception as e:
+        services["minio"] = {
+            "status": "error",
+            "error": str(e),
+        }
+
     # Overall status
     overall_status = "healthy"
     if any(svc.get("status") == "unhealthy" for svc in services.values()):
