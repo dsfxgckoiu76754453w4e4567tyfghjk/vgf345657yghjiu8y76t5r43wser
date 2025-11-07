@@ -4,6 +4,7 @@ from typing import Literal, Optional
 
 from langchain_cohere import CohereEmbeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -18,18 +19,19 @@ class EmbeddingsService:
     Supports:
     - Gemini (Google Generative AI)
     - Cohere
+    - OpenRouter (unified API for multiple providers)
     """
 
     def __init__(
         self,
-        provider: Optional[Literal["gemini", "cohere"]] = None,
+        provider: Optional[Literal["gemini", "cohere", "openrouter"]] = None,
         model: Optional[str] = None,
     ):
         """
         Initialize embeddings service.
 
         Args:
-            provider: Embedding provider (gemini or cohere)
+            provider: Embedding provider (gemini, cohere, or openrouter)
             model: Model name
         """
         self.provider = provider or settings.embedding_provider
@@ -56,6 +58,23 @@ class EmbeddingsService:
             logger.info(
                 "embeddings_service_initialized",
                 provider="cohere",
+                model=self.model,
+            )
+
+        elif self.provider == "openrouter":
+            # OpenRouter uses OpenAI-compatible API
+            self.embeddings = OpenAIEmbeddings(
+                model=self.model,
+                openai_api_key=settings.openrouter_api_key,
+                openai_api_base="https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": settings.openrouter_app_url,
+                    "X-Title": settings.openrouter_app_name,
+                },
+            )
+            logger.info(
+                "embeddings_service_initialized",
+                provider="openrouter",
                 model=self.model,
             )
 

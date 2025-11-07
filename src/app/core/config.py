@@ -69,10 +69,27 @@ class Settings(BaseSettings):
     google_location: str = Field(default="us-central1")
     cohere_api_key: str | None = Field(default=None)
 
+    # OpenRouter (Unified LLM API - Recommended)
+    openrouter_api_key: str | None = Field(default=None)
+    openrouter_app_name: str = Field(default="WisQu Islamic Chatbot")
+    openrouter_app_url: str = Field(default="https://wisqu.com")
+
+    # LLM Configuration (Used by LangGraph)
+    llm_provider: Literal["openrouter", "openai", "anthropic"] = Field(default="openrouter")
+    llm_model: str = Field(default="anthropic/claude-3.5-sonnet")
+    llm_temperature: float = Field(default=0.7)
+    llm_max_tokens: int = Field(default=4096)
+
     # Embeddings
-    embedding_provider: Literal["gemini", "cohere"] = Field(default="gemini")
+    embedding_provider: Literal["gemini", "cohere", "openrouter"] = Field(default="gemini")
     embedding_model: str = Field(default="gemini-embedding-001")
     embedding_dimension: int = Field(default=3072)
+
+    # Web Search
+    web_search_enabled: bool = Field(default=True)
+    web_search_provider: Literal["tavily", "serper"] = Field(default="tavily")
+    tavily_api_key: str | None = Field(default=None)
+    serper_api_key: str | None = Field(default=None)
 
     # Reranker
     reranker_provider: Literal["cohere", "vertex"] = Field(default="cohere")

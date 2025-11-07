@@ -59,20 +59,47 @@ class LangGraphService:
 
     def _get_llm(self):
         """Get LLM based on configuration."""
-        if settings.openai_api_key:
+        if settings.llm_provider == "openrouter":
+            # OpenRouter uses OpenAI-compatible API
+            if not settings.openrouter_api_key:
+                raise ValueError("OPENROUTER_API_KEY is required when LLM_PROVIDER=openrouter")
+
             return ChatOpenAI(
-                model="gpt-4o-mini",
-                temperature=0.7,
+                model=settings.llm_model,
+                temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
+                api_key=settings.openrouter_api_key,
+                base_url="https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": settings.openrouter_app_url,
+                    "X-Title": settings.openrouter_app_name,
+                },
+            )
+
+        elif settings.llm_provider == "openai":
+            if not settings.openai_api_key:
+                raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
+
+            return ChatOpenAI(
+                model=settings.llm_model,
+                temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
                 api_key=settings.openai_api_key,
             )
-        elif settings.anthropic_api_key:
+
+        elif settings.llm_provider == "anthropic":
+            if not settings.anthropic_api_key:
+                raise ValueError("ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic")
+
             return ChatAnthropic(
-                model="claude-3-5-sonnet-20241022",
-                temperature=0.7,
+                model=settings.llm_model,
+                temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
                 api_key=settings.anthropic_api_key,
             )
+
         else:
-            raise ValueError("No LLM API key configured")
+            raise ValueError(f"Unsupported LLM provider: {settings.llm_provider}")
 
     def _build_graph(self) -> StateGraph:
         """
