@@ -1,7 +1,7 @@
 # Shia Islamic Chatbot - Makefile
 # Comprehensive build automation for production-grade Shia Islamic chatbot
 
-.PHONY: help install dev test lint clean docker-up docker-down docker-build docker-ps docker-health docker-clean docker-clean-all docker-backup db-migrate db-upgrade db-downgrade format security deploy celery flower minio-ui docs
+.PHONY: help install dev test lint clean docker-up docker-down docker-build docker-ps docker-health docker-clean docker-clean-all docker-backup db-migrate db-upgrade db-downgrade format security deploy celery flower minio-ui docs verify-build test-local
 
 # Variables
 PYTHON := python3
@@ -473,3 +473,13 @@ quick-check: format lint-flake8 test-unit ## Quick check before commit
 
 full-check: check ## Full check before push (runs all checks)
 	@echo "✅ Full check passed - ready to push!"
+
+verify-build: ## Comprehensive pre-build verification (recommended before docker build)
+	@echo "🔍 Running comprehensive pre-build verification..."
+	@chmod +x scripts/verify-before-build.sh
+	@./scripts/verify-before-build.sh
+
+test-local: ## Test API endpoints locally (requires app to be running)
+	@echo "🧪 Testing local API endpoints..."
+	@chmod +x scripts/test-locally.sh
+	@./scripts/test-locally.sh
