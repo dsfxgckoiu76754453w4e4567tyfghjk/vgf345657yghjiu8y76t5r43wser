@@ -1,4 +1,4 @@
-"""Enhanced chat service with OpenRouter advanced features."""
+"""Enhanced chat service with OpenRouter advanced features and Langfuse tracing."""
 
 import json
 from datetime import datetime
@@ -13,6 +13,16 @@ from app.services.subscription_service import subscription_service
 from app.services.intent_detector import intent_detector, IntentType
 from app.services.image_generation_service import image_generation_service
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# Import Langfuse observe decorator when enabled
+if settings.langfuse_enabled:
+    from langfuse.decorators import observe
+else:
+    # No-op decorator when Langfuse is disabled
+    def observe(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 logger = get_logger(__name__)
 
@@ -40,6 +50,7 @@ class EnhancedChatService:
         """Initialize enhanced chat service."""
         self.openrouter = OpenRouterService()
 
+    @observe(name="enhanced-chat")
     async def chat(
         self,
         user_id: UUID,
@@ -238,6 +249,20 @@ class EnhancedChatService:
         # Add structured output schema if provided
         if response_schema:
             chat_params["response_schema"] = response_schema
+
+        # Add Langfuse tracing metadata
+        if settings.langfuse_enabled:
+            chat_params["name"] = "chat-completion"
+            chat_params["session_id"] = str(conversation_id)
+            chat_params["metadata"] = {
+                "user_id": str(user_id),
+                "conversation_id": str(conversation_id),
+                "model": model or settings.llm_model,
+                "auto_detect_images": auto_detect_images,
+            }
+            chat_params["tags"] = ["chat", "enhanced-service"]
+            if auto_detect_images:
+                chat_params["tags"].append("intent-detection")
 
         # Handle streaming response
         if enable_streaming:

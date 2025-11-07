@@ -1,4 +1,4 @@
-"""Image generation service using OpenRouter."""
+"""Image generation service using OpenRouter with Langfuse tracing."""
 
 from datetime import datetime
 from typing import Any, Literal
@@ -11,6 +11,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.subscription import GeneratedImage, MonthlyUsageQuota, PlanLimit
+
+# Import Langfuse observe decorator when enabled
+if settings.langfuse_enabled:
+    from langfuse.decorators import observe
+else:
+    # No-op decorator when Langfuse is disabled
+    def observe(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 logger = get_logger(__name__)
 
@@ -39,6 +49,7 @@ class ImageGenerationService:
 
         logger.info("image_generation_service_initialized")
 
+    @observe(name="image-generation")
     async def generate_image(
         self,
         prompt: str,

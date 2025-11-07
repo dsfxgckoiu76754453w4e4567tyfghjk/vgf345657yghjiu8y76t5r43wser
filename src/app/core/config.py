@@ -71,8 +71,10 @@ class Settings(BaseSettings):
 
     # OpenRouter (Unified LLM API - Recommended)
     openrouter_api_key: str | None = Field(default=None)
+    openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
     openrouter_app_name: str = Field(default="WisQu Islamic Chatbot")
     openrouter_app_url: str = Field(default="https://wisqu.com")
+    openrouter_model: str = Field(default="anthropic/claude-3.5-sonnet")
 
     # LLM Configuration (Used by LangGraph)
     llm_provider: Literal["openrouter", "openai", "anthropic"] = Field(default="openrouter")

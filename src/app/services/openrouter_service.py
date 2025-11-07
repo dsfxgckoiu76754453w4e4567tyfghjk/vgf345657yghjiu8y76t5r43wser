@@ -1,18 +1,25 @@
-"""OpenRouter client service with advanced features."""
+"""OpenRouter client service with Langfuse integration for cost tracking."""
 
+import os
 from typing import Any, Literal, Optional
 from uuid import UUID
 
-import httpx
 from app.core.config import settings
 from app.core.logging import get_logger
 
-logger = get_logger(__name__)
+# Import Langfuse OpenAI wrapper when enabled, otherwise use regular OpenAI
+if settings.langfuse_enabled:
+    from langfuse.openai import AsyncOpenAI
+    logger = get_logger(__name__)
+    logger.info("langfuse_openai_wrapper_enabled")
+else:
+    from openai import AsyncOpenAI
+    logger = get_logger(__name__)
 
 
 class OpenRouterService:
     """
-    Comprehensive OpenRouter client service.
+    Comprehensive OpenRouter client service with Langfuse observability.
 
     Features:
     - Prompt caching (Anthropic, OpenAI, Gemini, DeepSeek, Groq, Grok, Moonshot)
@@ -22,10 +29,11 @@ class OpenRouterService:
     - Structured outputs with JSON schema
     - Multimodal support (images, PDFs, audio)
     - Enhanced error handling
+    - **Langfuse integration**: Automatic tracing, cost tracking, and observability
     """
 
     def __init__(self):
-        """Initialize OpenRouter service."""
+        """Initialize OpenRouter service with Langfuse integration."""
         if not settings.openrouter_api_key:
             raise ValueError("OPENROUTER_API_KEY is required")
 
@@ -34,7 +42,25 @@ class OpenRouterService:
         self.app_url = settings.openrouter_app_url
         self.app_name = settings.openrouter_app_name
 
-        logger.info("openrouter_service_initialized")
+        # Set OpenAI API key for OpenRouter (required by OpenAI SDK)
+        os.environ["OPENAI_API_KEY"] = self.api_key
+
+        # Create OpenAI client with OpenRouter base URL
+        # This is automatically traced by Langfuse when enabled
+        self.client = AsyncOpenAI(
+            base_url=self.base_url,
+            api_key=self.api_key,
+            default_headers={
+                "HTTP-Referer": self.app_url,
+                "X-Title": self.app_name,
+            },
+        )
+
+        logger.info(
+            "openrouter_service_initialized",
+            langfuse_enabled=settings.langfuse_enabled,
+            base_url=self.base_url
+        )
 
     async def chat_completion(
         self,
@@ -48,10 +74,14 @@ class OpenRouterService:
         temperature: float | None = None,
         max_tokens: int | None = None,
         stream: bool = False,
+        name: str | None = None,  # Langfuse trace name
+        metadata: dict[str, Any] | None = None,  # Langfuse metadata
+        tags: list[str] | None = None,  # Langfuse tags
+        session_id: str | None = None,  # Langfuse session ID
         **kwargs: Any,
     ) -> dict[str, Any]:
         """
-        Create a chat completion with all advanced features.
+        Create a chat completion with all advanced features and Langfuse tracing.
 
         Args:
             messages: Chat messages
@@ -64,133 +94,121 @@ class OpenRouterService:
             temperature: Temperature (0.0-1.0)
             max_tokens: Maximum tokens in response
             stream: Stream responses
+            name: Name for this generation in Langfuse (optional)
+            metadata: Additional metadata for Langfuse tracing (optional)
+            tags: Tags for Langfuse tracing (optional)
+            session_id: Session ID for Langfuse tracing (optional)
             **kwargs: Additional parameters
 
         Returns:
             OpenRouter API response with usage data
         """
-        # Prepare payload
-        payload = self._build_payload(
-            messages=messages,
-            model=model,
-            fallback_models=fallback_models,
-            user_id=user_id,
-            enable_caching=enable_caching,
-            cache_breakpoints=cache_breakpoints,
-            response_schema=response_schema,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=stream,
-            **kwargs,
+        # Determine model
+        if settings.enable_auto_router and not model:
+            selected_model = "openrouter/auto"
+        elif model:
+            selected_model = model
+        else:
+            selected_model = settings.openrouter_model
+
+        # Prepare messages with caching
+        should_cache = (
+            enable_caching if enable_caching is not None else settings.prompt_caching_enabled
+        )
+        prepared_messages = self._prepare_messages_with_caching(
+            messages, should_cache, cache_breakpoints
         )
 
-        # Make request
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
-                    headers=self._get_headers(),
-                    timeout=120.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+        # Build extra_body for OpenRouter-specific features
+        extra_body = {}
 
-            # Parse response
-            result = self._parse_response(data)
+        # Usage accounting (CRITICAL for accurate cost tracking)
+        if settings.usage_tracking_enabled:
+            extra_body["usage"] = {"include": True}
 
-            logger.info(
-                "chat_completion_success",
-                model=result.get("model"),
-                tokens=result.get("usage", {}).get("total_tokens"),
-                cached_tokens=result.get("usage", {}).get("prompt_tokens_details", {}).get(
-                    "cached_tokens", 0
-                ),
-            )
-
-            return result
-
-        except httpx.HTTPStatusError as e:
-            error_data = self._parse_error(e)
-            logger.error(
-                "chat_completion_failed",
-                status_code=e.response.status_code,
-                error=error_data,
-            )
-            raise
-
-        except Exception as e:
-            logger.error("chat_completion_error", error=str(e))
-            raise
-
-    def _build_payload(
-        self,
-        messages: list[dict[str, Any]],
-        model: str | None,
-        fallback_models: list[str] | None,
-        user_id: UUID | str | None,
-        enable_caching: bool | None,
-        cache_breakpoints: list[int] | None,
-        response_schema: dict[str, Any] | None,
-        temperature: float | None,
-        max_tokens: int | None,
-        stream: bool,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Build request payload with all features."""
-        payload: dict[str, Any] = {}
-
-        # Model routing
-        if settings.enable_auto_router and not model:
-            payload["model"] = "openrouter/auto"
-        elif model:
-            payload["model"] = model
-        else:
-            payload["model"] = settings.openrouter_model
-
-        # Fallback models
+        # Model routing / fallbacks
         if settings.model_routing_enabled:
-            models_list = [payload["model"]]
+            models_list = [selected_model]
             if fallback_models:
                 models_list.extend(fallback_models)
             elif settings.default_fallback_models:
                 models_list.extend(settings.default_fallback_models)
 
             if len(models_list) > 1:
-                payload["models"] = models_list
+                extra_body["models"] = models_list
 
-        # Messages with caching
-        should_cache = (
-            enable_caching if enable_caching is not None else settings.prompt_caching_enabled
-        )
-        payload["messages"] = self._prepare_messages_with_caching(
-            messages, should_cache, cache_breakpoints
-        )
+        # Add any additional kwargs to extra_body
+        extra_body.update(kwargs)
 
-        # User tracking
-        if settings.track_user_ids and user_id:
-            payload["user"] = str(user_id)
+        # Prepare parameters for OpenAI SDK
+        completion_params = {
+            "model": selected_model,
+            "messages": prepared_messages,
+            "stream": stream,
+        }
 
-        # Usage accounting
-        if settings.usage_tracking_enabled:
-            payload["usage"] = {"include": True}
-
-        # Structured outputs
-        if response_schema and settings.structured_outputs_enabled:
-            payload["response_format"] = {"type": "json_schema", "json_schema": response_schema}
-
-        # Parameters
+        # Add optional parameters
         if temperature is not None:
-            payload["temperature"] = temperature
+            completion_params["temperature"] = temperature
         if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
+            completion_params["max_tokens"] = max_tokens
+        if user_id and settings.track_user_ids:
+            completion_params["user"] = str(user_id)
+        if response_schema and settings.structured_outputs_enabled:
+            completion_params["response_format"] = {
+                "type": "json_schema",
+                "json_schema": response_schema
+            }
 
-        payload["stream"] = stream
+        # Add extra_body if not empty
+        if extra_body:
+            completion_params["extra_body"] = extra_body
 
-        # Additional parameters
-        payload.update(kwargs)
+        # Add Langfuse parameters if enabled
+        if settings.langfuse_enabled:
+            langfuse_params = {}
+            if name:
+                langfuse_params["name"] = name
+            if metadata:
+                langfuse_params["metadata"] = metadata
+            if tags:
+                langfuse_params["tags"] = tags
+            if session_id:
+                langfuse_params["session_id"] = session_id
 
-        return payload
+            # Add langfuse params to extra_headers (Langfuse uses these)
+            if langfuse_params:
+                completion_params["extra_headers"] = {
+                    "langfuse-trace-name": name or "chat-completion",
+                    "langfuse-session-id": session_id or "",
+                }
+
+        # Make API call with Langfuse tracing
+        try:
+            response = await self.client.chat.completions.create(**completion_params)
+
+            # Convert response to dict (OpenAI SDK returns object)
+            result = self._parse_openai_response(response)
+
+            logger.info(
+                "chat_completion_success",
+                model=result.get("model"),
+                tokens=result.get("usage", {}).get("total_tokens"),
+                cached_tokens=result.get("cached_tokens_read", 0),
+                cost_usd=result.get("total_cost_usd"),
+                langfuse_enabled=settings.langfuse_enabled,
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(
+                "chat_completion_error",
+                error=str(e),
+                model=selected_model,
+                langfuse_enabled=settings.langfuse_enabled,
+            )
+            raise
 
     def _prepare_messages_with_caching(
         self,
@@ -253,62 +271,70 @@ class OpenRouterService:
 
         return message
 
-    def _get_headers(self) -> dict[str, str]:
-        """Get request headers."""
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": self.app_url,
-            "X-Title": self.app_name,
+    def _parse_openai_response(self, response) -> dict[str, Any]:
+        """
+        Parse OpenAI SDK response to dict with OpenRouter cost data.
+
+        OpenRouter returns cost data in the response which Langfuse
+        automatically captures when usage accounting is enabled.
+        """
+        # Convert to dict
+        result = {
+            "id": response.id,
+            "model": response.model,
+            "choices": [
+                {
+                    "index": choice.index,
+                    "message": {
+                        "role": choice.message.role,
+                        "content": choice.message.content,
+                    },
+                    "finish_reason": choice.finish_reason,
+                }
+                for choice in response.choices
+            ],
+            "created": response.created,
         }
 
-    def _parse_response(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Parse OpenRouter response with enhanced usage data."""
-        result = data.copy()
+        # Parse usage data
+        if response.usage:
+            usage_dict = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
 
-        # Extract usage data if present
-        if "usage" in data:
-            usage = data["usage"]
+            # OpenRouter cost data (if available)
+            if hasattr(response.usage, "prompt_tokens_details"):
+                details = response.usage.prompt_tokens_details
+                if details:
+                    usage_dict["prompt_tokens_details"] = {
+                        "cached_tokens": getattr(details, "cached_tokens", 0),
+                    }
+                    # Add cached_tokens_read to top level for easier access
+                    result["cached_tokens_read"] = getattr(details, "cached_tokens", 0)
 
-            # Parse cache discount
-            if "cost_details" in usage:
-                cache_discount = usage["cost_details"].get("cache_discount", 0)
-                result["cache_discount_usd"] = cache_discount
+            # OpenRouter may include cost in usage (via extra fields)
+            # These are automatically captured by Langfuse
+            if hasattr(response.usage, "cost"):
+                result["total_cost_usd"] = response.usage.cost
 
-            # Parse upstream cost (for BYOK)
-            if "cost_details" in usage:
-                upstream_cost = usage["cost_details"].get("upstream_inference_cost")
-                if upstream_cost:
-                    result["upstream_inference_cost_usd"] = upstream_cost / 1000000  # Convert to USD
+            result["usage"] = usage_dict
 
         return result
 
-    def _parse_error(self, error: httpx.HTTPStatusError) -> dict[str, Any]:
-        """Parse OpenRouter error with metadata."""
-        try:
-            error_data = error.response.json()
-            error_info = error_data.get("error", {})
-
-            return {
-                "code": error_info.get("code", error.response.status_code),
-                "message": error_info.get("message", str(error)),
-                "metadata": error_info.get("metadata", {}),
-                "status_code": error.response.status_code,
-            }
-        except Exception:
-            return {
-                "code": error.response.status_code,
-                "message": str(error),
-                "metadata": {},
-                "status_code": error.response.status_code,
-            }
-
     async def get_models(self) -> list[dict[str, Any]]:
         """Get list of available models from OpenRouter."""
+        # Use httpx for this endpoint as it's not a completion
+        import httpx
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/models",
-                headers=self._get_headers(),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "HTTP-Referer": self.app_url,
+                    "X-Title": self.app_name,
+                },
             )
             response.raise_for_status()
             data = response.json()
@@ -316,20 +342,30 @@ class OpenRouterService:
 
     async def get_credits(self) -> dict[str, Any]:
         """Get OpenRouter credit balance."""
+        import httpx
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://openrouter.ai/api/v1/auth/key",
-                headers=self._get_headers(),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "HTTP-Referer": self.app_url,
+                    "X-Title": self.app_name,
+                },
             )
             response.raise_for_status()
             return response.json()
 
     async def get_generation(self, generation_id: str) -> dict[str, Any]:
         """Get generation details including usage data."""
+        import httpx
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"https://openrouter.ai/api/v1/generation?id={generation_id}",
-                headers=self._get_headers(),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "HTTP-Referer": self.app_url,
+                    "X-Title": self.app_name,
+                },
             )
             response.raise_for_status()
             return response.json()
