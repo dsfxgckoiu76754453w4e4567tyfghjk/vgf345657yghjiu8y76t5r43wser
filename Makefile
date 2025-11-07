@@ -30,7 +30,12 @@ install-dev: ## Install dependencies including dev tools
 	$(POETRY) install --with dev
 	@echo "✅ Development dependencies installed"
 
-setup: install docker-up db-upgrade ## Complete project setup (install + docker + migrations)
+install-hooks: ## Install pre-commit git hooks
+	$(POETRY) run pre-commit install
+	$(POETRY) run pre-commit install --hook-type commit-msg
+	@echo "✅ Pre-commit hooks installed"
+
+setup: install-dev install-hooks docker-up db-upgrade ## Complete project setup (install + hooks + docker + migrations)
 	@echo "✅ Project setup complete! Run 'make dev' to start development server"
 
 # ============================================================================
