@@ -16,9 +16,11 @@ class TestWebSearchConfigValidation:
 
         assert settings.web_search_enabled is True
         assert settings.web_search_provider == "tavily"
-        assert settings.web_search_model == "perplexity/sonar-deep-research"
+        assert settings.web_search_model == "perplexity/sonar"
         assert settings.web_search_temperature == 0.3
         assert settings.web_search_max_tokens == 4096
+        assert settings.web_search_context_size == "medium"
+        assert settings.web_search_engine is None
 
     def test_openrouter_provider_config(self):
         """Test OpenRouter provider configuration."""
@@ -83,7 +85,7 @@ class TestWebSearchConfigValidation:
 
             Settings(
                 web_search_provider="openrouter",
-                web_search_model="perplexity/sonar-deep-research",
+                web_search_model="perplexity/sonar",
                 openrouter_api_key="test-key",
             )
 
@@ -91,7 +93,7 @@ class TestWebSearchConfigValidation:
             warning_messages = [str(warning.message) for warning in w]
             web_search_warnings = [
                 msg for msg in warning_messages
-                if "perplexity/sonar-deep-research" in msg
+                if "perplexity/sonar" in msg and "deprecated" in msg.lower()
             ]
 
             # Should not have warnings about this stable model

@@ -101,25 +101,28 @@ class TestOpenRouterSearch:
     @patch("app.services.web_search_service.settings")
     @patch("httpx.AsyncClient")
     async def test_openrouter_search_success(self, mock_client_class, mock_settings):
-        """Test successful OpenRouter search."""
+        """Test successful OpenRouter search with web plugin."""
         # Setup mock settings
         mock_settings.web_search_enabled = True
         mock_settings.web_search_provider = "openrouter"
         mock_settings.openrouter_api_key = "test-key"
         mock_settings.openrouter_app_url = "https://test.com"
         mock_settings.openrouter_app_name = "Test App"
-        mock_settings.web_search_model = "perplexity/sonar-deep-research"
+        mock_settings.web_search_model = "perplexity/sonar"
         mock_settings.web_search_temperature = 0.3
         mock_settings.web_search_max_tokens = 4096
+        mock_settings.web_search_context_size = "medium"
+        mock_settings.web_search_engine = None
 
-        # Setup mock response
+        # Setup mock response with annotations
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "choices": [
                 {
                     "message": {
-                        "content": "Test answer with information about the query."
+                        "content": "Test answer with information about the query.",
+                        "annotations": []
                     }
                 }
             ]
@@ -139,50 +142,66 @@ class TestOpenRouterSearch:
 
         # Verify result
         assert result["provider"] == "openrouter"
-        assert result["model"] == "perplexity/sonar-deep-research"
+        assert result["model"] == "perplexity/sonar"
         assert result["query"] == "test query"
         assert "answer" in result
         assert "Test answer" in result["answer"]
 
-        # Verify API call
+        # Verify API call includes plugins parameter
         mock_client.post.assert_called_once()
         call_args = mock_client.post.call_args
         assert "openrouter.ai" in call_args[0][0]
-        assert call_args[1]["json"]["model"] == "perplexity/sonar-deep-research"
+        payload = call_args[1]["json"]
+        assert payload["model"] == "perplexity/sonar"
+        assert "plugins" in payload
+        assert payload["plugins"][0]["id"] == "web"
+        assert payload["plugins"][0]["max_results"] == 5
 
     @pytest.mark.asyncio
     @patch("app.services.web_search_service.settings")
     @patch("httpx.AsyncClient")
-    async def test_openrouter_search_with_citations(self, mock_client_class, mock_settings):
-        """Test OpenRouter search with citations."""
+    async def test_openrouter_search_with_annotations(self, mock_client_class, mock_settings):
+        """Test OpenRouter search with annotations (URL citations)."""
         # Setup mock settings
         mock_settings.web_search_enabled = True
         mock_settings.web_search_provider = "openrouter"
         mock_settings.openrouter_api_key = "test-key"
         mock_settings.openrouter_app_url = "https://test.com"
         mock_settings.openrouter_app_name = "Test App"
-        mock_settings.web_search_model = "perplexity/sonar-deep-research"
+        mock_settings.web_search_model = "perplexity/sonar"
         mock_settings.web_search_temperature = 0.3
         mock_settings.web_search_max_tokens = 4096
+        mock_settings.web_search_context_size = "medium"
+        mock_settings.web_search_engine = None
 
-        # Setup mock response with citations
+        # Setup mock response with annotations (OpenRouter format)
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "choices": [
                 {
                     "message": {
-                        "content": "Test answer",
-                        "sources": [
+                        "content": "Test answer with citations [1][2]",
+                        "annotations": [
                             {
-                                "title": "Source 1",
-                                "url": "https://example.com/1",
-                                "snippet": "Content 1"
+                                "type": "url_citation",
+                                "url_citation": {
+                                    "url": "https://example.com/1",
+                                    "title": "Source 1",
+                                    "content": "Content 1",
+                                    "start_index": 28,
+                                    "end_index": 31
+                                }
                             },
                             {
-                                "title": "Source 2",
-                                "url": "https://example.com/2",
-                                "snippet": "Content 2"
+                                "type": "url_citation",
+                                "url_citation": {
+                                    "url": "https://example.com/2",
+                                    "title": "Source 2",
+                                    "content": "Content 2",
+                                    "start_index": 31,
+                                    "end_index": 34
+                                }
                             }
                         ]
                     }
@@ -202,11 +221,17 @@ class TestOpenRouterSearch:
         service = WebSearchService()
         result = await service.search("test query", max_results=5)
 
-        # Verify citations
+        # Verify citations parsed from annotations
         assert len(result["results"]) == 2
         assert result["results"][0]["title"] == "Source 1"
         assert result["results"][0]["url"] == "https://example.com/1"
+        assert result["results"][0]["content"] == "Content 1"
         assert result["results"][1]["title"] == "Source 2"
+        assert result["results"][1]["url"] == "https://example.com/2"
+
+        # Verify raw annotations are included
+        assert "annotations" in result
+        assert len(result["annotations"]) == 2
 
     @pytest.mark.asyncio
     @patch("app.services.web_search_service.settings")
@@ -262,6 +287,22 @@ class TestOpenRouterSearch:
         # Execute search
         service = WebSearchService()
         result = await service.search("test query", max_results=5)
+
+        # Add required settings for fallback test
+        mock_settings.web_search_context_size = "medium"
+        mock_settings.web_search_engine = None
+
+        # Update mock responses to include message format
+        mock_success_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Fallback model answer",
+                        "annotations": []
+                    }
+                }
+            ]
+        }
 
         # Verify fallback was used
         assert result["provider"] == "openrouter"
@@ -340,40 +381,49 @@ class TestCostEstimation:
         assert cost == 0.01  # 10 * 0.001
 
     @patch("app.services.web_search_service.settings")
-    def test_estimate_cost_openrouter_sonar(self, mock_settings):
-        """Test cost estimation for OpenRouter Sonar models."""
+    def test_estimate_cost_openrouter_sonar_native(self, mock_settings):
+        """Test cost estimation for OpenRouter Sonar with native search."""
         mock_settings.web_search_provider = "openrouter"
         mock_settings.openrouter_api_key = "test-key"
-        mock_settings.web_search_model = "perplexity/sonar-deep-research"
+        mock_settings.web_search_model = "perplexity/sonar"
+        mock_settings.web_search_context_size = "medium"
+        mock_settings.web_search_engine = None  # Auto (uses native)
 
         service = WebSearchService()
-        cost = service.estimate_cost(10)
+        cost = service.estimate_cost(1000, max_results=5)
 
-        assert cost == 0.15  # 10 * 0.015
+        # Native search: $8 per 1000 requests for medium context
+        assert cost == 8.0
 
     @patch("app.services.web_search_service.settings")
-    def test_estimate_cost_openrouter_gpt4o(self, mock_settings):
-        """Test cost estimation for OpenRouter GPT-4o models."""
+    def test_estimate_cost_openrouter_exa(self, mock_settings):
+        """Test cost estimation for OpenRouter with Exa search."""
         mock_settings.web_search_provider = "openrouter"
         mock_settings.openrouter_api_key = "test-key"
-        mock_settings.web_search_model = "openai/gpt-4o-search-preview"
+        mock_settings.web_search_model = "anthropic/claude-3.5-sonnet"
+        mock_settings.web_search_engine = "exa"  # Force Exa
 
         service = WebSearchService()
-        cost = service.estimate_cost(10)
+        cost = service.estimate_cost(10, max_results=5)
 
-        assert cost == 0.2  # 10 * 0.02
+        # Exa search: $4 per 1000 results, 10 searches * 5 results = 50 results
+        # 50/1000 * $4 = $0.20
+        assert cost == 0.20
 
     @patch("app.services.web_search_service.settings")
-    def test_estimate_cost_openrouter_mini(self, mock_settings):
-        """Test cost estimation for OpenRouter mini models."""
+    def test_estimate_cost_openrouter_gpt4o_native(self, mock_settings):
+        """Test cost estimation for OpenRouter GPT-4o with native search."""
         mock_settings.web_search_provider = "openrouter"
         mock_settings.openrouter_api_key = "test-key"
-        mock_settings.web_search_model = "openai/gpt-4o-mini-search-preview"
+        mock_settings.web_search_model = "openai/gpt-4o"
+        mock_settings.web_search_context_size = "high"
+        mock_settings.web_search_engine = None
 
         service = WebSearchService()
-        cost = service.estimate_cost(10)
+        cost = service.estimate_cost(1000, max_results=5)
 
-        assert cost == 0.02  # 10 * 0.002
+        # GPT-4o native search: $50 per 1000 requests for high context
+        assert cost == 50.0
 
 
 class TestFallbackModels:

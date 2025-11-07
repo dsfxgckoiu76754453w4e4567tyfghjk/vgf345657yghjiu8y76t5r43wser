@@ -91,9 +91,13 @@ class Settings(BaseSettings):
     tavily_api_key: str | None = Field(default=None)
     serper_api_key: str | None = Field(default=None)
     # OpenRouter Search Configuration (when WEB_SEARCH_PROVIDER=openrouter)
-    web_search_model: str = Field(default="perplexity/sonar-deep-research")
+    web_search_model: str = Field(default="perplexity/sonar")
     web_search_temperature: float = Field(default=0.3)
     web_search_max_tokens: int = Field(default=4096)
+    # Search context size for native search (low, medium, high)
+    web_search_context_size: Literal["low", "medium", "high"] = Field(default="medium")
+    # Web search engine (native, exa, or None for automatic)
+    web_search_engine: Literal["native", "exa"] | None = Field(default=None)
 
     # Reranker
     reranker_provider: Literal["cohere", "vertex"] = Field(default="cohere")

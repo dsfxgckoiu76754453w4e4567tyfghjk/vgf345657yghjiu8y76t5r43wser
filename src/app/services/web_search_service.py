@@ -9,11 +9,15 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 # OpenRouter search model fallbacks (in priority order)
+# These models have native search support
 OPENROUTER_SEARCH_MODELS = [
-    "perplexity/sonar-deep-research",
+    "perplexity/sonar",
     "perplexity/sonar-pro",
-    "openai/gpt-4o-search-preview",
-    "openai/gpt-4o-mini-search-preview",
+    "perplexity/sonar-reasoning",
+    "perplexity/sonar-reasoning-pro",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "anthropic/claude-3.5-sonnet",
 ]
 
 
@@ -291,7 +295,11 @@ class WebSearchService:
         model: str,
     ) -> dict[str, Any]:
         """
-        Try searching with a specific OpenRouter model.
+        Try searching with a specific OpenRouter model using the web plugin.
+
+        Uses OpenRouter's native web search plugin which works with any model.
+        For models with native search support (OpenAI, Anthropic, Perplexity),
+        it uses provider's built-in search. For others, uses Exa search.
 
         Args:
             query: Search query
@@ -299,7 +307,7 @@ class WebSearchService:
             model: Model to use
 
         Returns:
-            Search results
+            Search results with citations from annotations
 
         Raises:
             httpx.HTTPStatusError: If the API request fails
@@ -313,27 +321,36 @@ class WebSearchService:
             "X-Title": settings.openrouter_app_name,
         }
 
-        # Construct prompt for search
-        search_prompt = f"""Please search the web and provide comprehensive information about: {query}
+        # Build web plugin configuration
+        web_plugin = {
+            "id": "web",
+            "max_results": max_results,
+        }
 
-Include:
-1. A clear, concise answer to the query
-2. Key facts and details
-3. Multiple sources and references
+        # Add engine specification if configured
+        if settings.web_search_engine:
+            web_plugin["engine"] = settings.web_search_engine
 
-Provide up to {max_results} relevant sources with their URLs."""
-
+        # Build payload with web plugin
         payload = {
             "model": model,
             "messages": [
                 {
                     "role": "user",
-                    "content": search_prompt,
+                    "content": query,
                 }
             ],
+            "plugins": [web_plugin],
             "temperature": settings.web_search_temperature,
             "max_tokens": settings.web_search_max_tokens,
         }
+
+        # Add web_search_options for native search models
+        # (Perplexity, OpenAI with search, etc.)
+        if self._is_native_search_model(model):
+            payload["web_search_options"] = {
+                "search_context_size": settings.web_search_context_size
+            }
 
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload, headers=headers, timeout=60.0)
@@ -341,14 +358,23 @@ Provide up to {max_results} relevant sources with their URLs."""
             data = response.json()
 
         # Extract the response
-        answer = data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
+        answer = message["content"]
 
-        # Parse citations if available (some models provide structured citations)
+        # Parse citations from annotations (standardized by OpenRouter)
+        annotations = message.get("annotations", [])
         citations = []
-        if "citations" in data:
-            citations = data["citations"]
-        elif "sources" in data.get("choices", [{}])[0].get("message", {}):
-            citations = data["choices"][0]["message"]["sources"]
+
+        for annotation in annotations:
+            if annotation.get("type") == "url_citation":
+                citation_data = annotation.get("url_citation", {})
+                citations.append({
+                    "title": citation_data.get("title", ""),
+                    "url": citation_data.get("url", ""),
+                    "content": citation_data.get("content", ""),
+                    "start_index": citation_data.get("start_index"),
+                    "end_index": citation_data.get("end_index"),
+                })
 
         logger.info(
             "web_search_completed",
@@ -356,18 +382,18 @@ Provide up to {max_results} relevant sources with their URLs."""
             model=model,
             query=query[:50],
             citations_count=len(citations),
+            engine=settings.web_search_engine or "auto",
         )
 
-        # Format results - extract URLs from citations or answer
+        # Format results for compatibility
         results = []
-        if citations:
-            for i, citation in enumerate(citations[:max_results]):
-                results.append({
-                    "title": citation.get("title", f"Source {i+1}"),
-                    "url": citation.get("url", citation.get("link", "")),
-                    "content": citation.get("snippet", citation.get("excerpt", "")),
-                    "score": 1.0 - (i * 0.1),  # Simple relevance scoring
-                })
+        for i, citation in enumerate(citations):
+            results.append({
+                "title": citation["title"] or f"Source {i+1}",
+                "url": citation["url"],
+                "content": citation["content"],
+                "score": 1.0 - (i * 0.1),  # Simple relevance scoring
+            })
 
         return {
             "provider": "openrouter",
@@ -375,23 +401,46 @@ Provide up to {max_results} relevant sources with their URLs."""
             "query": query,
             "answer": answer,
             "results": results,
-            "full_response": answer,  # Include full response for models without structured citations
+            "full_response": answer,
+            "annotations": annotations,  # Include raw annotations
         }
 
-    def estimate_cost(self, num_searches: int) -> float:
+    def _is_native_search_model(self, model: str) -> bool:
         """
-        Estimate search cost in USD.
+        Check if a model has native search support.
 
-        Approximate costs (as of 2025):
+        Native search is supported by:
+        - Perplexity models (all sonar variants)
+        - OpenAI models
+        - Anthropic models
+
+        Args:
+            model: Model ID
+
+        Returns:
+            True if model has native search support
+        """
+        model_lower = model.lower()
+        native_providers = ["perplexity/", "openai/", "anthropic/"]
+        return any(model_lower.startswith(provider) for provider in native_providers)
+
+    def estimate_cost(self, num_searches: int, max_results: int = 5) -> float:
+        """
+        Estimate search cost in USD based on OpenRouter documentation.
+
+        Costs (as of 2025):
         - Tavily: $0.001 per search (basic), $0.01 (advanced)
         - Serper: $0.001 per search
-        - OpenRouter: Varies by model
-          - perplexity/sonar-deep-research: ~$0.015 per search
-          - openai/gpt-4o-search-preview: ~$0.02 per search
-          - openai/gpt-4o-mini-search-preview: ~$0.002 per search
+        - OpenRouter with Exa: $4 per 1000 results ($0.02 for 5 results)
+        - OpenRouter Native Search (per 1000 requests):
+          - Perplexity Sonar: $5 (low), $8 (medium), $12 (high)
+          - Perplexity Sonar Pro: $6 (low), $10 (medium), $14 (high)
+          - OpenAI GPT-4o/GPT-4.1: $30 (low), $35 (medium), $50 (high)
+          - OpenAI GPT-4o-mini: $25 (low), $27.50 (medium), $30 (high)
 
         Args:
             num_searches: Number of searches
+            max_results: Maximum results per search (for Exa pricing)
 
         Returns:
             Estimated cost in USD
@@ -406,17 +455,32 @@ Provide up to {max_results} relevant sources with their URLs."""
             return num_searches * cost_per_search
 
         elif self.provider == "openrouter":
-            # Estimate based on model
             model = settings.web_search_model.lower()
-            if "mini" in model:
-                cost_per_search = 0.002
-            elif "gpt-4o" in model:
-                cost_per_search = 0.02
-            elif "sonar" in model:
-                cost_per_search = 0.015
+
+            # Check if using native search or Exa
+            if self._is_native_search_model(settings.web_search_model) and settings.web_search_engine != "exa":
+                # Native search pricing (per 1000 requests)
+                context_size = settings.web_search_context_size
+
+                # Perplexity pricing
+                if "sonar-reasoning-pro" in model or "sonar-pro" in model:
+                    cost_per_1k = {"low": 6.0, "medium": 10.0, "high": 14.0}[context_size]
+                elif "sonar" in model:
+                    cost_per_1k = {"low": 5.0, "medium": 8.0, "high": 12.0}[context_size]
+                # OpenAI pricing
+                elif "gpt-4o-mini" in model or "gpt-4.1-mini" in model:
+                    cost_per_1k = {"low": 25.0, "medium": 27.5, "high": 30.0}[context_size]
+                elif "gpt-4o" in model or "gpt-4.1" in model:
+                    cost_per_1k = {"low": 30.0, "medium": 35.0, "high": 50.0}[context_size]
+                else:
+                    # Default for other native search models
+                    cost_per_1k = {"low": 5.0, "medium": 8.0, "high": 12.0}[context_size]
+
+                return (num_searches / 1000) * cost_per_1k
             else:
-                cost_per_search = 0.01  # Default estimate
-            return num_searches * cost_per_search
+                # Exa search pricing: $4 per 1000 results
+                total_results = num_searches * max_results
+                return (total_results / 1000) * 4.0
 
         return 0.0
 
