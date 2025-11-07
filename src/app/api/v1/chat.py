@@ -1,4 +1,4 @@
-"""Chat API endpoints with OpenRouter advanced features."""
+"""Chat API endpoints with OpenRouter advanced features and Langfuse tracing."""
 
 from typing import Any
 from uuid import UUID
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.core.logging import get_logger
+from app.core.langfuse_client import trace_request, trace_span, log_event
 from app.db.base import get_db
 from app.models.user import User
 from app.services.enhanced_chat_service import enhanced_chat_service
@@ -98,11 +99,66 @@ async def send_message(
     - If stream=false: Complete response with usage metadata (may include generated_image)
     - If stream=true: Server-Sent Events (SSE) stream
     """
-    try:
-        # Handle streaming
-        if request_data.stream:
-            async def generate():
-                async for chunk in await enhanced_chat_service.chat(
+    # Create trace for entire request flow
+    with trace_request(
+        name="chat-api-request",
+        user_id=str(current_user.id),
+        session_id=str(request_data.conversation_id),
+        metadata={
+            "endpoint": "/api/v1/chat",
+            "model": request_data.model,
+            "stream": request_data.stream,
+            "auto_detect_images": request_data.auto_detect_images,
+            "has_system_prompt": request_data.system_prompt is not None,
+            "has_response_schema": request_data.response_schema is not None,
+        },
+        tags=["api", "chat", "v1"],
+    ) as trace:
+        try:
+            # Log request received
+            log_event(
+                trace,
+                "request-received",
+                metadata={
+                    "message_length": len(request_data.message),
+                    "conversation_id": str(request_data.conversation_id),
+                }
+            )
+
+            # Handle streaming
+            if request_data.stream:
+                log_event(trace, "streaming-mode", metadata={"enabled": True})
+
+                async def generate():
+                    async for chunk in await enhanced_chat_service.chat(
+                        user_id=current_user.id,
+                        conversation_id=request_data.conversation_id,
+                        message_content=request_data.message,
+                        db=db,
+                        model=request_data.model,
+                        system_prompt=request_data.system_prompt,
+                        temperature=request_data.temperature,
+                        max_tokens=request_data.max_tokens,
+                        enable_caching=request_data.enable_caching,
+                        enable_streaming=True,
+                        response_schema=request_data.response_schema,
+                        auto_detect_images=request_data.auto_detect_images,
+                    ):
+                        yield f"data: {chunk}\n\n"
+
+                return StreamingResponse(
+                    generate(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no",
+                    },
+                )
+
+            # Non-streaming
+            with trace_span(trace, "chat-service-call", metadata={"streaming": False}):
+                result = await enhanced_chat_service.chat(
                     user_id=current_user.id,
                     conversation_id=request_data.conversation_id,
                     message_content=request_data.message,
@@ -112,81 +168,79 @@ async def send_message(
                     temperature=request_data.temperature,
                     max_tokens=request_data.max_tokens,
                     enable_caching=request_data.enable_caching,
-                    enable_streaming=True,
+                    enable_streaming=False,
                     response_schema=request_data.response_schema,
                     auto_detect_images=request_data.auto_detect_images,
-                ):
-                    yield f"data: {chunk}\n\n"
+                )
 
-            return StreamingResponse(
-                generate(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no",
-                },
+            logger.info(
+                "chat_message_sent",
+                user_id=str(current_user.id),
+                conversation_id=str(request_data.conversation_id),
+                model=result["model"],
             )
 
-        # Non-streaming
-        result = await enhanced_chat_service.chat(
-            user_id=current_user.id,
-            conversation_id=request_data.conversation_id,
-            message_content=request_data.message,
-            db=db,
-            model=request_data.model,
-            system_prompt=request_data.system_prompt,
-            temperature=request_data.temperature,
-            max_tokens=request_data.max_tokens,
-            enable_caching=request_data.enable_caching,
-            enable_streaming=False,
-            response_schema=request_data.response_schema,
-            auto_detect_images=request_data.auto_detect_images,
-        )
+            # Update trace with response details
+            trace.update(
+                output={
+                    "message_id": str(result["message_id"]),
+                    "model": result["model"],
+                    "tokens": result["usage"]["total_tokens"],
+                    "cost_usd": result.get("total_cost_usd"),
+                    "cached_tokens": result.get("cached_tokens_read", 0),
+                    "has_image": result.get("generated_image") is not None,
+                    "intent_results": list(result.get("intent_results", {}).keys()),
+                },
+                metadata={
+                    "response_length": len(result["content"]),
+                    "cache_hit_rate": (
+                        result.get("cached_tokens_read", 0) / result["usage"]["prompt_tokens"]
+                        if result["usage"]["prompt_tokens"] > 0 else 0
+                    ),
+                }
+            )
 
-        logger.info(
-            "chat_message_sent",
-            user_id=str(current_user.id),
-            conversation_id=str(request_data.conversation_id),
-            model=result["model"],
-        )
+            response = ChatResponse(
+                message_id=result["message_id"],
+                content=result["content"],
+                model=result["model"],
+                usage=result["usage"],
+                cached_tokens_read=result.get("cached_tokens_read"),
+                cached_tokens_write=result.get("cached_tokens_write"),
+                cache_discount_usd=result.get("cache_discount_usd"),
+                total_cost_usd=result.get("total_cost_usd"),
+                fallback_used=result.get("fallback_used", False),
+                final_model_used=result.get("final_model_used"),
+                generated_image=result.get("generated_image"),
+                intent_results=result.get("intent_results"),
+            )
 
-        return ChatResponse(
-            message_id=result["message_id"],
-            content=result["content"],
-            model=result["model"],
-            usage=result["usage"],
-            cached_tokens_read=result.get("cached_tokens_read"),
-            cached_tokens_write=result.get("cached_tokens_write"),
-            cache_discount_usd=result.get("cache_discount_usd"),
-            total_cost_usd=result.get("total_cost_usd"),
-            fallback_used=result.get("fallback_used", False),
-            final_model_used=result.get("final_model_used"),
-            generated_image=result.get("generated_image"),
-            intent_results=result.get("intent_results"),
-        )
+            log_event(trace, "response-sent", metadata={"success": True})
+            return response
 
-    except ValueError as e:
-        # Quota exceeded or validation error
-        logger.warning(
-            "chat_message_failed",
-            user_id=str(current_user.id),
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
-    except Exception as e:
-        logger.error(
-            "chat_message_error",
-            user_id=str(current_user.id),
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send message",
-        )
+        except ValueError as e:
+            # Quota exceeded or validation error
+            log_event(trace, "request-failed", metadata={"error": "quota_exceeded"})
+            logger.warning(
+                "chat_message_failed",
+                user_id=str(current_user.id),
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
+        except Exception as e:
+            log_event(trace, "request-error", metadata={"error": str(e)})
+            logger.error(
+                "chat_message_error",
+                user_id=str(current_user.id),
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send message",
+            )
 
 
 @router.post("/structured", response_model=ChatResponse)

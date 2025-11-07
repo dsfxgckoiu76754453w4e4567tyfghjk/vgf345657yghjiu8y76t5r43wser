@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.langfuse_client import get_langfuse_client, trace_span, log_event
 from app.models.chat import Conversation, Message
 from app.services.openrouter_service import OpenRouterService
 from app.services.subscription_service import subscription_service
@@ -25,6 +26,9 @@ else:
         return decorator
 
 logger = get_logger(__name__)
+
+# Get Langfuse client for adding spans
+langfuse = get_langfuse_client()
 
 
 class EnhancedChatService:
