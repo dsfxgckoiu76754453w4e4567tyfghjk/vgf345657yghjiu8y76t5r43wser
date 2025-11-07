@@ -8,6 +8,14 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+# OpenRouter search model fallbacks (in priority order)
+OPENROUTER_SEARCH_MODELS = [
+    "perplexity/sonar-deep-research",
+    "perplexity/sonar-pro",
+    "openai/gpt-4o-search-preview",
+    "openai/gpt-4o-mini-search-preview",
+]
+
 
 class WebSearchService:
     """
@@ -204,6 +212,97 @@ class WebSearchService:
 
         These models have built-in web search capabilities and provide
         responses with citations and sources.
+
+        Includes automatic fallback to alternative models if the primary model
+        is unavailable or deprecated.
+        """
+        # Prepare list of models to try (primary + fallbacks)
+        primary_model = settings.web_search_model
+        models_to_try = [primary_model]
+
+        # Add fallback models if primary is not in the list
+        for fallback_model in OPENROUTER_SEARCH_MODELS:
+            if fallback_model != primary_model and fallback_model not in models_to_try:
+                models_to_try.append(fallback_model)
+
+        last_error = None
+        for attempt, model in enumerate(models_to_try):
+            try:
+                result = await self._try_openrouter_model(query, max_results, model)
+
+                # Log if we used a fallback model
+                if attempt > 0:
+                    logger.warning(
+                        "openrouter_model_fallback_used",
+                        primary_model=primary_model,
+                        fallback_model=model,
+                        attempt=attempt + 1,
+                        message=f"Primary model '{primary_model}' failed, using fallback '{model}'",
+                    )
+
+                return result
+
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                error_detail = ""
+                try:
+                    error_data = e.response.json()
+                    error_detail = error_data.get("error", {}).get("message", str(e))
+                except Exception:
+                    error_detail = str(e)
+
+                logger.warning(
+                    "openrouter_model_failed",
+                    model=model,
+                    status_code=e.response.status_code,
+                    error=error_detail,
+                    attempt=attempt + 1,
+                    remaining_fallbacks=len(models_to_try) - attempt - 1,
+                )
+
+                # If this is the last model, raise the error
+                if attempt == len(models_to_try) - 1:
+                    raise ValueError(
+                        f"All OpenRouter search models failed. Last error: {error_detail}. "
+                        f"Tried models: {', '.join(models_to_try)}. "
+                        f"Please check if your model '{primary_model}' is still available at https://openrouter.ai/models"
+                    ) from e
+
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "openrouter_model_error",
+                    model=model,
+                    error=str(e),
+                    attempt=attempt + 1,
+                )
+
+                # If this is the last model, raise the error
+                if attempt == len(models_to_try) - 1:
+                    raise
+
+        # Should not reach here, but just in case
+        raise last_error or Exception("Failed to search with OpenRouter")
+
+    async def _try_openrouter_model(
+        self,
+        query: str,
+        max_results: int,
+        model: str,
+    ) -> dict[str, Any]:
+        """
+        Try searching with a specific OpenRouter model.
+
+        Args:
+            query: Search query
+            max_results: Maximum number of results
+            model: Model to use
+
+        Returns:
+            Search results
+
+        Raises:
+            httpx.HTTPStatusError: If the API request fails
         """
         url = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -225,7 +324,7 @@ Include:
 Provide up to {max_results} relevant sources with their URLs."""
 
         payload = {
-            "model": settings.web_search_model,
+            "model": model,
             "messages": [
                 {
                     "role": "user",
@@ -254,7 +353,7 @@ Provide up to {max_results} relevant sources with their URLs."""
         logger.info(
             "web_search_completed",
             provider="openrouter",
-            model=settings.web_search_model,
+            model=model,
             query=query[:50],
             citations_count=len(citations),
         )
@@ -272,7 +371,7 @@ Provide up to {max_results} relevant sources with their URLs."""
 
         return {
             "provider": "openrouter",
-            "model": settings.web_search_model,
+            "model": model,
             "query": query,
             "answer": answer,
             "results": results,

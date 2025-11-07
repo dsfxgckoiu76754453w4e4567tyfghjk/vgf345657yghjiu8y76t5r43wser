@@ -226,6 +226,25 @@ class Settings(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def validate_web_search_config(self):
+        """Validate web search configuration."""
+        if self.web_search_enabled and self.web_search_provider == "openrouter":
+            # Warn if using a potentially deprecated model name pattern
+            model = self.web_search_model.lower()
+            deprecated_patterns = ["-preview", "-beta", "-alpha"]
+
+            if any(pattern in model for pattern in deprecated_patterns):
+                import warnings
+                warnings.warn(
+                    f"Web search model '{self.web_search_model}' appears to be a preview/beta version. "
+                    f"These models may be deprecated. Consider using stable models like "
+                    f"'perplexity/sonar-deep-research' or check https://openrouter.ai/models for current models.",
+                    UserWarning
+                )
+
+        return self
+
     def get_database_url(self, database_name: str | None = None) -> str:
         """
         Build database URL from individual parameters.
