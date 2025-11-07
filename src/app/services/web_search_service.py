@@ -16,17 +16,18 @@ class WebSearchService:
     Supports:
     - Tavily (Recommended for LLM applications)
     - Serper (Google Search API)
+    - OpenRouter (Search-enabled models like Perplexity Sonar)
     """
 
     def __init__(
         self,
-        provider: Optional[Literal["tavily", "serper"]] = None,
+        provider: Optional[Literal["tavily", "serper", "openrouter"]] = None,
     ):
         """
         Initialize web search service.
 
         Args:
-            provider: Search provider (tavily or serper)
+            provider: Search provider (tavily, serper, or openrouter)
         """
         self.provider = provider or settings.web_search_provider
 
@@ -35,10 +36,13 @@ class WebSearchService:
             raise ValueError("TAVILY_API_KEY is required when WEB_SEARCH_PROVIDER=tavily")
         elif self.provider == "serper" and not settings.serper_api_key:
             raise ValueError("SERPER_API_KEY is required when WEB_SEARCH_PROVIDER=serper")
+        elif self.provider == "openrouter" and not settings.openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY is required when WEB_SEARCH_PROVIDER=openrouter")
 
         logger.info(
             "web_search_service_initialized",
             provider=self.provider,
+            model=settings.web_search_model if self.provider == "openrouter" else None,
         )
 
     async def search(
@@ -67,6 +71,8 @@ class WebSearchService:
                 return await self._search_tavily(query, max_results, search_depth)
             elif self.provider == "serper":
                 return await self._search_serper(query, max_results)
+            elif self.provider == "openrouter":
+                return await self._search_openrouter(query, max_results)
             else:
                 raise ValueError(f"Unsupported search provider: {self.provider}")
 
@@ -183,6 +189,96 @@ class WebSearchService:
             ],
         }
 
+    async def _search_openrouter(
+        self,
+        query: str,
+        max_results: int,
+    ) -> dict[str, Any]:
+        """
+        Search using OpenRouter's search-enabled models.
+
+        OpenRouter provides access to search-enabled models like:
+        - perplexity/sonar-deep-research (deep research with citations)
+        - openai/gpt-4o-search-preview (GPT-4 with search)
+        - openai/gpt-4o-mini-search-preview (faster, cheaper)
+
+        These models have built-in web search capabilities and provide
+        responses with citations and sources.
+        """
+        url = "https://openrouter.ai/api/v1/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {settings.openrouter_api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": settings.openrouter_app_url,
+            "X-Title": settings.openrouter_app_name,
+        }
+
+        # Construct prompt for search
+        search_prompt = f"""Please search the web and provide comprehensive information about: {query}
+
+Include:
+1. A clear, concise answer to the query
+2. Key facts and details
+3. Multiple sources and references
+
+Provide up to {max_results} relevant sources with their URLs."""
+
+        payload = {
+            "model": settings.web_search_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": search_prompt,
+                }
+            ],
+            "temperature": settings.web_search_temperature,
+            "max_tokens": settings.web_search_max_tokens,
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=headers, timeout=60.0)
+            response.raise_for_status()
+            data = response.json()
+
+        # Extract the response
+        answer = data["choices"][0]["message"]["content"]
+
+        # Parse citations if available (some models provide structured citations)
+        citations = []
+        if "citations" in data:
+            citations = data["citations"]
+        elif "sources" in data.get("choices", [{}])[0].get("message", {}):
+            citations = data["choices"][0]["message"]["sources"]
+
+        logger.info(
+            "web_search_completed",
+            provider="openrouter",
+            model=settings.web_search_model,
+            query=query[:50],
+            citations_count=len(citations),
+        )
+
+        # Format results - extract URLs from citations or answer
+        results = []
+        if citations:
+            for i, citation in enumerate(citations[:max_results]):
+                results.append({
+                    "title": citation.get("title", f"Source {i+1}"),
+                    "url": citation.get("url", citation.get("link", "")),
+                    "content": citation.get("snippet", citation.get("excerpt", "")),
+                    "score": 1.0 - (i * 0.1),  # Simple relevance scoring
+                })
+
+        return {
+            "provider": "openrouter",
+            "model": settings.web_search_model,
+            "query": query,
+            "answer": answer,
+            "results": results,
+            "full_response": answer,  # Include full response for models without structured citations
+        }
+
     def estimate_cost(self, num_searches: int) -> float:
         """
         Estimate search cost in USD.
@@ -190,6 +286,10 @@ class WebSearchService:
         Approximate costs (as of 2025):
         - Tavily: $0.001 per search (basic), $0.01 (advanced)
         - Serper: $0.001 per search
+        - OpenRouter: Varies by model
+          - perplexity/sonar-deep-research: ~$0.015 per search
+          - openai/gpt-4o-search-preview: ~$0.02 per search
+          - openai/gpt-4o-mini-search-preview: ~$0.002 per search
 
         Args:
             num_searches: Number of searches
@@ -204,6 +304,19 @@ class WebSearchService:
 
         elif self.provider == "serper":
             cost_per_search = 0.001
+            return num_searches * cost_per_search
+
+        elif self.provider == "openrouter":
+            # Estimate based on model
+            model = settings.web_search_model.lower()
+            if "mini" in model:
+                cost_per_search = 0.002
+            elif "gpt-4o" in model:
+                cost_per_search = 0.02
+            elif "sonar" in model:
+                cost_per_search = 0.015
+            else:
+                cost_per_search = 0.01  # Default estimate
             return num_searches * cost_per_search
 
         return 0.0

@@ -87,9 +87,13 @@ class Settings(BaseSettings):
 
     # Web Search
     web_search_enabled: bool = Field(default=True)
-    web_search_provider: Literal["tavily", "serper"] = Field(default="tavily")
+    web_search_provider: Literal["tavily", "serper", "openrouter"] = Field(default="tavily")
     tavily_api_key: str | None = Field(default=None)
     serper_api_key: str | None = Field(default=None)
+    # OpenRouter Search Configuration (when WEB_SEARCH_PROVIDER=openrouter)
+    web_search_model: str = Field(default="perplexity/sonar-deep-research")
+    web_search_temperature: float = Field(default=0.3)
+    web_search_max_tokens: int = Field(default=4096)
 
     # Reranker
     reranker_provider: Literal["cohere", "vertex"] = Field(default="cohere")
