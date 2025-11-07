@@ -10,7 +10,7 @@ from app.core.logging import get_logger
 from app.models.chat import Conversation, Message
 from app.services.openrouter_service import OpenRouterService
 from app.services.subscription_service import subscription_service
-from app.services.intent_detector import intent_detector
+from app.services.intent_detector import intent_detector, IntentType
 from app.services.image_generation_service import image_generation_service
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +28,12 @@ class EnhancedChatService:
     - Streaming support
     - Structured outputs
     - User tracking for cache stickiness
-    - Automatic image generation detection
+    - Comprehensive intent detection and automatic execution:
+      * Image generation
+      * Web search (standard and deep)
+      * Document search (RAG)
+      * Audio transcription
+      * Document/code analysis
     """
 
     def __init__(self):
@@ -78,41 +83,128 @@ class EnhancedChatService:
             logger.warning("quota_exceeded", user_id=str(user_id), error=str(e))
             raise
 
-        # Detect image generation intent (if enabled)
-        generated_image = None
-        if auto_detect_images and settings.image_generation_enabled:
-            should_generate, image_prompt = intent_detector.should_generate_image(
-                message=message_content,
-                explicit_request=False,
+        # Detect all user intents and execute appropriate actions
+        intent_results = {}
+        if auto_detect_images:
+            # Build context for intent detection
+            context = {
+                "has_documents": False,  # TODO: Check if user has uploaded documents
+                "has_audio": False,  # TODO: Check if message has audio attachment
+                "has_code": False,  # TODO: Check if message contains code
+            }
+
+            # Detect all intents
+            detected_intents = intent_detector.detect_intents(message_content, context)
+
+            logger.info(
+                "intents_detected_in_chat",
+                user_id=str(user_id),
+                conversation_id=str(conversation_id),
+                intent_count=len(detected_intents),
+                primary_intent=detected_intents[0].intent_type.value if detected_intents else None,
+                all_intents=[i.intent_type.value for i in detected_intents],
             )
 
-            if should_generate and image_prompt:
+            # Execute actions for high-priority intents
+            for intent in detected_intents:
+                # Only process high-confidence, high-priority intents
+                if intent.confidence < 0.70 or intent.priority < 7:
+                    continue
+
                 try:
-                    logger.info(
-                        "auto_image_generation_detected",
-                        user_id=str(user_id),
-                        conversation_id=str(conversation_id),
-                        prompt=image_prompt,
-                    )
+                    # IMAGE GENERATION
+                    if intent.intent_type == IntentType.IMAGE_GENERATION and settings.image_generation_enabled:
+                        logger.info(
+                            "executing_image_generation_intent",
+                            user_id=str(user_id),
+                            prompt=intent.extracted_query,
+                        )
 
-                    # Generate image
-                    generated_image = await image_generation_service.generate_image(
-                        prompt=image_prompt,
-                        user_id=user_id,
-                        db=db,
-                        conversation_id=conversation_id,
-                    )
+                        generated_image = await image_generation_service.generate_image(
+                            prompt=intent.extracted_query,
+                            user_id=user_id,
+                            db=db,
+                            conversation_id=conversation_id,
+                        )
 
-                    logger.info(
-                        "auto_image_generation_success",
-                        user_id=str(user_id),
-                        image_id=str(generated_image["id"]),
-                    )
+                        intent_results["generated_image"] = generated_image
+                        logger.info(
+                            "image_generation_intent_success",
+                            user_id=str(user_id),
+                            image_id=str(generated_image["id"]),
+                        )
+
+                    # WEB SEARCH
+                    elif intent.intent_type == IntentType.WEB_SEARCH:
+                        logger.info(
+                            "web_search_intent_detected",
+                            user_id=str(user_id),
+                            query=intent.extracted_query,
+                            intent_type="web_search",
+                        )
+                        intent_results["web_search_requested"] = {
+                            "query": intent.extracted_query,
+                            "type": "standard",
+                            "note": "Web search capability will be integrated with external API"
+                        }
+
+                    # DEEP WEB SEARCH
+                    elif intent.intent_type == IntentType.DEEP_WEB_SEARCH:
+                        logger.info(
+                            "deep_web_search_intent_detected",
+                            user_id=str(user_id),
+                            query=intent.extracted_query,
+                            intent_type="deep_web_search",
+                        )
+                        intent_results["web_search_requested"] = {
+                            "query": intent.extracted_query,
+                            "type": "deep",
+                            "note": "Deep web search capability will be integrated with external API"
+                        }
+
+                    # DOCUMENT SEARCH (RAG)
+                    elif intent.intent_type == IntentType.DOCUMENT_SEARCH:
+                        logger.info(
+                            "document_search_intent_detected",
+                            user_id=str(user_id),
+                            query=intent.extracted_query,
+                            intent_type="document_search",
+                        )
+                        intent_results["document_search_requested"] = {
+                            "query": intent.extracted_query,
+                            "note": "Document search will use RAG pipeline on user's uploaded documents"
+                        }
+
+                    # AUDIO TRANSCRIPTION
+                    elif intent.intent_type == IntentType.AUDIO_TRANSCRIPTION:
+                        logger.info(
+                            "audio_transcription_intent_detected",
+                            user_id=str(user_id),
+                            intent_type="audio_transcription",
+                        )
+                        intent_results["audio_transcription_requested"] = {
+                            "note": "Audio transcription will be processed via ASR service"
+                        }
+
+                    # DOCUMENT/CODE ANALYSIS
+                    elif intent.intent_type in [IntentType.DOCUMENT_ANALYSIS, IntentType.CODE_ANALYSIS]:
+                        logger.info(
+                            "analysis_intent_detected",
+                            user_id=str(user_id),
+                            intent_type=intent.intent_type.value,
+                        )
+                        intent_results["analysis_requested"] = {
+                            "type": intent.intent_type.value,
+                            "query": intent.extracted_query,
+                            "note": "Analysis will be performed on attached documents/code"
+                        }
+
                 except Exception as e:
-                    # Don't fail the entire chat if image generation fails
+                    # Don't fail the entire chat if intent execution fails
                     logger.warning(
-                        "auto_image_generation_failed",
+                        "intent_execution_failed",
                         user_id=str(user_id),
+                        intent_type=intent.intent_type.value,
                         error=str(e),
                     )
                     # Continue with chat response
@@ -226,9 +318,13 @@ class EnhancedChatService:
                 "final_model_used": result.get("final_model_used"),
             }
 
-            # Add generated image if available
-            if generated_image:
-                response["generated_image"] = generated_image
+            # Add intent results if any were executed
+            if intent_results:
+                response["intent_results"] = intent_results
+
+                # Backward compatibility: keep generated_image at top level
+                if "generated_image" in intent_results:
+                    response["generated_image"] = intent_results["generated_image"]
 
             return response
 

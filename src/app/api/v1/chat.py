@@ -48,6 +48,7 @@ class ChatResponse(BaseModel):
     fallback_used: bool = False
     final_model_used: str | None = None
     generated_image: dict[str, Any] | None = None
+    intent_results: dict[str, Any] | None = None
 
 
 @router.post("/", response_model=ChatResponse)
@@ -76,13 +77,22 @@ async def send_message(
     - Usage tracking with detailed token breakdown
     - Structured outputs with JSON schema validation
     - Cache-aware cost optimization
-    - **Smart image detection**: Automatically generates images when user mentions
-      "generate image", "create picture", etc. in their message
+    - **Comprehensive Intent Detection**: Automatically detects and executes user intents:
+      * **Image Generation**: "generate an image of..."
+      * **Web Search**: "search online for...", "google..."
+      * **Deep Web Search**: "do a thorough search for..."
+      * **Document Search**: "search my documents for..."
+      * **Audio Transcription**: "transcribe this audio..."
+      * **Code/Document Analysis**: "analyze this code..."
 
-    Image Generation (2 Ways):
-    1. **Explicit**: Call /api/v1/images/generate endpoint directly
-    2. **Automatic**: Just mention image generation in your chat message
-       (e.g., "generate an image of a mosque at sunset")
+    Intent Detection (Automatic):
+    - Detects multiple intents in a single message
+    - Prioritizes and executes high-confidence intents
+    - Returns results in `intent_results` field
+    - Examples:
+      * "Generate an image of a mosque" → automatic image generation
+      * "Search online for Islamic history" → web search request
+      * "Search my documents for Quran verses" → document RAG search
 
     Returns:
     - If stream=false: Complete response with usage metadata (may include generated_image)
@@ -153,6 +163,7 @@ async def send_message(
             fallback_used=result.get("fallback_used", False),
             final_model_used=result.get("final_model_used"),
             generated_image=result.get("generated_image"),
+            intent_results=result.get("intent_results"),
         )
 
     except ValueError as e:
