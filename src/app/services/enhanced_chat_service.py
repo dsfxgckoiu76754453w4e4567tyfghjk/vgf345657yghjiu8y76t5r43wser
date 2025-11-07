@@ -69,6 +69,7 @@ class EnhancedChatService:
         enable_streaming: bool = False,
         response_schema: dict[str, Any] | None = None,
         auto_detect_images: bool = True,
+        langfuse_trace_id: str | None = None,
     ) -> dict[str, Any] | AsyncGenerator[str, None]:
         """
         Send a chat message and get a response.
@@ -254,19 +255,37 @@ class EnhancedChatService:
         if response_schema:
             chat_params["response_schema"] = response_schema
 
-        # Add Langfuse tracing metadata
+        # Add comprehensive Langfuse tracing metadata
         if settings.langfuse_enabled:
-            chat_params["name"] = "chat-completion"
+            chat_params["name"] = "enhanced-chat-completion"
             chat_params["session_id"] = str(conversation_id)
             chat_params["metadata"] = {
                 "user_id": str(user_id),
                 "conversation_id": str(conversation_id),
-                "model": model or settings.llm_model,
+                "model_requested": model or settings.llm_model,
                 "auto_detect_images": auto_detect_images,
+                "has_system_prompt": system_prompt is not None,
+                "has_response_schema": response_schema is not None,
+                "temperature": temperature or settings.llm_temperature,
+                "max_tokens": max_tokens or settings.llm_max_tokens,
+                "caching_enabled": use_caching,
+                "streaming": enable_streaming,
+                "num_messages": len(messages),
+                "message_content_length": len(message_content),
+                "intents_detected": [i.intent_type.value for i in detected_intents] if detected_intents else [],
+                "high_priority_intents": len([i for i in detected_intents if i.confidence >= 0.70 and i.priority >= 7]) if detected_intents else 0,
             }
-            chat_params["tags"] = ["chat", "enhanced-service"]
+            chat_params["tags"] = ["chat", "enhanced-service", "openrouter"]
             if auto_detect_images:
                 chat_params["tags"].append("intent-detection")
+            if enable_streaming:
+                chat_params["tags"].append("streaming")
+            if use_caching:
+                chat_params["tags"].append("caching")
+            if response_schema:
+                chat_params["tags"].append("structured-output")
+            if system_prompt:
+                chat_params["tags"].append("custom-system-prompt")
 
         # Handle streaming response
         if enable_streaming:
@@ -313,6 +332,8 @@ class EnhancedChatService:
                 response_schema=json.dumps(response_schema) if response_schema else None,
                 structured_data=json.dumps(result.get("structured_data")) if result.get("structured_data") else None,
                 schema_validation_passed=result.get("schema_validation_passed", True),
+                langfuse_trace_id=langfuse_trace_id,
+                langfuse_observation_id=result.get("langfuse_observation_id"),
                 db=db,
             )
 
@@ -345,6 +366,7 @@ class EnhancedChatService:
                 "total_cost_usd": result.get("total_cost_usd"),
                 "fallback_used": result.get("fallback_used", False),
                 "final_model_used": result.get("final_model_used"),
+                "langfuse_observation_id": result.get("langfuse_observation_id"),
             }
 
             # Add intent results if any were executed
@@ -509,6 +531,8 @@ class EnhancedChatService:
         response_schema: str | None = None,
         structured_data: str | None = None,
         schema_validation_passed: bool = True,
+        langfuse_trace_id: str | None = None,
+        langfuse_observation_id: str | None = None,
     ) -> Message:
         """Save a message to the database."""
         message = Message(
@@ -530,6 +554,8 @@ class EnhancedChatService:
             response_schema=response_schema,
             structured_data=structured_data,
             schema_validation_passed=schema_validation_passed,
+            langfuse_trace_id=langfuse_trace_id,
+            langfuse_observation_id=langfuse_observation_id,
         )
 
         db.add(message)

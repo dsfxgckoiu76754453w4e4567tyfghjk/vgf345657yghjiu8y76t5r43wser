@@ -270,3 +270,101 @@ def log_event(
         metadata=metadata or {},
         input=input_data,
     )
+
+
+def score_trace(
+    trace_id: str,
+    name: str,
+    value: float,
+    comment: Optional[str] = None,
+    data_type: str = "NUMERIC",
+):
+    """
+    Add a score to a trace in Langfuse.
+
+    Use this for user feedback, evaluation scores, or any metrics
+    you want to track for a specific trace.
+
+    Args:
+        trace_id: Langfuse trace ID
+        name: Name of the score (e.g., "user-feedback", "accuracy")
+        value: Numeric value of the score
+        comment: Optional comment explaining the score
+        data_type: Type of score ("NUMERIC", "CATEGORICAL", "BOOLEAN")
+
+    Example:
+        # Add user feedback score
+        score_trace(
+            trace_id="abc-123",
+            name="user-feedback",
+            value=1.0,  # 1 for thumbs up, 0 for thumbs down
+            comment="User found response helpful"
+        )
+    """
+    if not settings.langfuse_enabled:
+        logger.debug("langfuse_disabled_skipping_score")
+        return
+
+    try:
+        langfuse_client.score(
+            trace_id=trace_id,
+            name=name,
+            value=value,
+            comment=comment,
+            data_type=data_type,
+        )
+        logger.info(
+            "langfuse_score_added",
+            trace_id=trace_id,
+            score_name=name,
+            value=value,
+        )
+    except Exception as e:
+        logger.error(
+            "langfuse_score_error",
+            trace_id=trace_id,
+            error=str(e),
+        )
+
+
+def score_observation(
+    observation_id: str,
+    name: str,
+    value: float,
+    comment: Optional[str] = None,
+    data_type: str = "NUMERIC",
+):
+    """
+    Add a score to a specific observation (span/generation) in Langfuse.
+
+    Args:
+        observation_id: Langfuse observation ID
+        name: Name of the score
+        value: Numeric value of the score
+        comment: Optional comment
+        data_type: Type of score
+    """
+    if not settings.langfuse_enabled:
+        logger.debug("langfuse_disabled_skipping_score")
+        return
+
+    try:
+        langfuse_client.score(
+            observation_id=observation_id,
+            name=name,
+            value=value,
+            comment=comment,
+            data_type=data_type,
+        )
+        logger.info(
+            "langfuse_observation_score_added",
+            observation_id=observation_id,
+            score_name=name,
+            value=value,
+        )
+    except Exception as e:
+        logger.error(
+            "langfuse_observation_score_error",
+            observation_id=observation_id,
+            error=str(e),
+        )

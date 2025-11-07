@@ -164,24 +164,35 @@ class OpenRouterService:
         if extra_body:
             completion_params["extra_body"] = extra_body
 
-        # Add Langfuse parameters if enabled
+        # Add comprehensive Langfuse parameters if enabled
         if settings.langfuse_enabled:
-            langfuse_params = {}
-            if name:
-                langfuse_params["name"] = name
-            if metadata:
-                langfuse_params["metadata"] = metadata
+            # Build comprehensive metadata
+            langfuse_metadata = {
+                "provider": "openrouter",
+                "model_requested": selected_model,
+                "caching_enabled": should_cache,
+                "structured_output": response_schema is not None,
+                "num_messages": len(prepared_messages),
+                "stream": stream,
+                **(metadata or {}),
+            }
+
+            # Build comprehensive tags
+            langfuse_tags = ["openrouter", "chat-completion"]
+            if stream:
+                langfuse_tags.append("streaming")
+            if response_schema:
+                langfuse_tags.append("structured-output")
+            if should_cache:
+                langfuse_tags.append("caching-enabled")
             if tags:
-                langfuse_params["tags"] = tags
-            if session_id:
-                langfuse_params["session_id"] = session_id
+                langfuse_tags.extend(tags)
 
             # Add langfuse params to extra_headers (Langfuse uses these)
-            if langfuse_params:
-                completion_params["extra_headers"] = {
-                    "langfuse-trace-name": name or "chat-completion",
-                    "langfuse-session-id": session_id or "",
-                }
+            completion_params["extra_headers"] = {
+                "langfuse-trace-name": name or "openrouter-completion",
+                "langfuse-session-id": session_id or "",
+            }
 
         # Make API call with Langfuse tracing
         try:

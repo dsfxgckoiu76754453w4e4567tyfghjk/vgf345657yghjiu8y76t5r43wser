@@ -141,6 +141,10 @@ class Message(Base):
     llm_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     processing_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # Langfuse tracing
+    langfuse_trace_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    langfuse_observation_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
     # Structured output schema
     response_schema: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     structured_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
@@ -217,6 +221,11 @@ class MessageFeedback(Base):
 
     # Context
     was_helpful: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+
+    # Langfuse scoring integration
+    langfuse_trace_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)  # Numeric score
+    score_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Name in Langfuse
 
     # Timestamp
     created_at: Mapped[datetime] = mapped_column(

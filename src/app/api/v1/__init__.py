@@ -11,6 +11,7 @@ from app.api.v1 import (
     conversations,
     documents,
     external_api,
+    feedback,
     health,
     images,
     leaderboard,
@@ -38,6 +39,7 @@ api_router.include_router(asr.router, prefix="/asr", tags=["Speech-to-Text (ASR)
 # OpenRouter Advanced Features
 api_router.include_router(chat.router, prefix="/chat", tags=["Chat with Advanced Features"])
 api_router.include_router(conversations.router, prefix="/conversations", tags=["Conversation Management"])
+api_router.include_router(feedback.router, prefix="/feedback", tags=["User Feedback & Scoring"])
 api_router.include_router(images.router, prefix="/images", tags=["Image Generation"])
 api_router.include_router(presets.router, prefix="/presets", tags=["Model Presets"])
 api_router.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])

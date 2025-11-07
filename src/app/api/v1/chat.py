@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.core.logging import get_logger
 from app.core.langfuse_client import trace_request, trace_span, log_event
@@ -50,6 +51,8 @@ class ChatResponse(BaseModel):
     final_model_used: str | None = None
     generated_image: dict[str, Any] | None = None
     intent_results: dict[str, Any] | None = None
+    langfuse_trace_id: str | None = None
+    langfuse_observation_id: str | None = None
 
 
 @router.post("/", response_model=ChatResponse)
@@ -106,13 +109,18 @@ async def send_message(
         session_id=str(request_data.conversation_id),
         metadata={
             "endpoint": "/api/v1/chat",
-            "model": request_data.model,
+            "model_requested": request_data.model or "default",
             "stream": request_data.stream,
             "auto_detect_images": request_data.auto_detect_images,
             "has_system_prompt": request_data.system_prompt is not None,
             "has_response_schema": request_data.response_schema is not None,
+            "temperature": request_data.temperature,
+            "max_tokens": request_data.max_tokens,
+            "enable_caching": request_data.enable_caching,
+            "message_length": len(request_data.message),
+            "user_plan": current_user.subscription_plan if hasattr(current_user, "subscription_plan") else "unknown",
         },
-        tags=["api", "chat", "v1"],
+        tags=["api", "chat", "v1", "openrouter", "production"],
     ) as trace:
         try:
             # Log request received
@@ -156,6 +164,9 @@ async def send_message(
                     },
                 )
 
+            # Capture trace ID for user feedback
+            trace_id = getattr(trace, 'id', None) if settings.langfuse_enabled else None
+
             # Non-streaming
             with trace_span(trace, "chat-service-call", metadata={"streaming": False}):
                 result = await enhanced_chat_service.chat(
@@ -171,6 +182,7 @@ async def send_message(
                     enable_streaming=False,
                     response_schema=request_data.response_schema,
                     auto_detect_images=request_data.auto_detect_images,
+                    langfuse_trace_id=trace_id,
                 )
 
             logger.info(
@@ -181,21 +193,41 @@ async def send_message(
             )
 
             # Update trace with response details
+            usage = result["usage"]
             trace.update(
                 output={
                     "message_id": str(result["message_id"]),
-                    "model": result["model"],
-                    "tokens": result["usage"]["total_tokens"],
+                    "model_used": result["model"],
+                    "content_preview": result["content"][:100] + "..." if len(result["content"]) > 100 else result["content"],
+                    "tokens_total": usage["total_tokens"],
+                    "tokens_prompt": usage["prompt_tokens"],
+                    "tokens_completion": usage["completion_tokens"],
                     "cost_usd": result.get("total_cost_usd"),
-                    "cached_tokens": result.get("cached_tokens_read", 0),
+                    "cached_tokens_read": result.get("cached_tokens_read", 0),
+                    "cached_tokens_write": result.get("cached_tokens_write", 0),
+                    "cache_discount_usd": result.get("cache_discount_usd", 0),
                     "has_image": result.get("generated_image") is not None,
                     "intent_results": list(result.get("intent_results", {}).keys()),
+                    "fallback_used": result.get("fallback_used", False),
+                    "final_model_used": result.get("final_model_used"),
                 },
                 metadata={
-                    "response_length": len(result["content"]),
-                    "cache_hit_rate": (
-                        result.get("cached_tokens_read", 0) / result["usage"]["prompt_tokens"]
-                        if result["usage"]["prompt_tokens"] > 0 else 0
+                    "response_length_chars": len(result["content"]),
+                    "response_length_words": len(result["content"].split()),
+                    "cache_hit_rate": round(
+                        result.get("cached_tokens_read", 0) / usage["prompt_tokens"]
+                        if usage["prompt_tokens"] > 0 else 0,
+                        3
+                    ),
+                    "cost_per_token": round(
+                        result.get("total_cost_usd", 0) / usage["total_tokens"]
+                        if usage["total_tokens"] > 0 else 0,
+                        6
+                    ),
+                    "cache_savings_percentage": round(
+                        (result.get("cache_discount_usd", 0) / result.get("total_cost_usd", 1)) * 100
+                        if result.get("total_cost_usd", 0) > 0 else 0,
+                        2
                     ),
                 }
             )
@@ -213,6 +245,8 @@ async def send_message(
                 final_model_used=result.get("final_model_used"),
                 generated_image=result.get("generated_image"),
                 intent_results=result.get("intent_results"),
+                langfuse_trace_id=trace_id,
+                langfuse_observation_id=result.get("langfuse_observation_id"),
             )
 
             log_event(trace, "response-sent", metadata={"success": True})
