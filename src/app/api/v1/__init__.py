@@ -2,7 +2,19 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import admin, asr, auth, documents, external_api, leaderboard, support, tools
+from app.api.v1 import (
+    admin,
+    asr,
+    auth,
+    documents,
+    external_api,
+    images,
+    leaderboard,
+    presets,
+    subscriptions,
+    support,
+    tools,
+)
 
 api_router = APIRouter()
 
@@ -15,6 +27,11 @@ api_router.include_router(support.router, prefix="/support", tags=["Support Tick
 api_router.include_router(leaderboard.router, prefix="/leaderboard", tags=["Leaderboards"])
 api_router.include_router(external_api.router, prefix="/external-api", tags=["External API Integration"])
 api_router.include_router(asr.router, prefix="/asr", tags=["Speech-to-Text (ASR)"])
+
+# OpenRouter Advanced Features
+api_router.include_router(images.router, prefix="/images", tags=["Image Generation"])
+api_router.include_router(presets.router, prefix="/presets", tags=["Model Presets"])
+api_router.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
 
 # TODO: Add more routers as they are implemented
 # api_router.include_router(users.router, prefix="/users", tags=["Users"])
