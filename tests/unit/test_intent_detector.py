@@ -266,33 +266,6 @@ class TestIntentDetector:
         # Image generation has higher priority (10) than web search (8)
         assert primary.intent_type == IntentType.IMAGE_GENERATION
 
-    # ===== BACKWARD COMPATIBILITY TESTS =====
-
-    def test_backward_compat_detect_image_intent(self):
-        """Test backward compatibility method for image detection."""
-        message = "Generate an image of a beautiful sunset"
-        is_image, prompt = intent_detector.detect_image_intent(message)
-
-        assert is_image is True
-        assert prompt is not None
-        assert "sunset" in prompt.lower()
-
-    def test_backward_compat_should_generate_image(self):
-        """Test backward compatibility method for image generation decision."""
-        message = "Create a picture of mountains"
-        should_gen, prompt = intent_detector.should_generate_image(message)
-
-        assert should_gen is True
-        assert prompt is not None
-
-    def test_backward_compat_explicit_request(self):
-        """Test backward compatibility with explicit request flag."""
-        message = "A beautiful landscape"
-        should_gen, prompt = intent_detector.should_generate_image(message, explicit_request=True)
-
-        assert should_gen is True
-        assert prompt == message
-
     # ===== ARABIC SUPPORT TESTS =====
 
     def test_arabic_image_keyword(self):

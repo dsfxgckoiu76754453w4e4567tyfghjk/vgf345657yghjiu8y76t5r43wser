@@ -64,11 +64,14 @@ class IntentDetector:
     - Confidence scoring
     - Priority ordering
     - Query extraction for each intent
-    - Support for English and Arabic
+    - Support for Persian, English, and Arabic
+
+    Note: Persian keywords need to be added to all intent categories.
     """
 
     # ===== IMAGE GENERATION =====
     IMAGE_KEYWORDS = [
+        # TODO: Add Persian keywords (e.g., "تصویر بساز", "عکس بساز", etc.)
         # English - Explicit
         "generate image", "create image", "make image", "draw image",
         "generate picture", "create picture", "make picture", "draw picture",
@@ -92,6 +95,7 @@ class IntentDetector:
 
     # ===== WEB SEARCH =====
     WEB_SEARCH_KEYWORDS = [
+        # TODO: Add Persian keywords (e.g., "جستجو در وب", "جستجو آنلاین", etc.)
         # English
         "search web", "search online", "search internet", "google",
         "search for", "look up", "find online", "web search",
@@ -111,6 +115,7 @@ class IntentDetector:
 
     # ===== DEEP WEB SEARCH =====
     DEEP_WEB_SEARCH_KEYWORDS = [
+        # TODO: Add Persian keywords (e.g., "جستجوی عمیق", "جستجوی جامع", etc.)
         # English
         "deep search", "thorough search", "comprehensive search",
         "search thoroughly", "extensive search", "detailed search",
@@ -128,6 +133,7 @@ class IntentDetector:
 
     # ===== DOCUMENT SEARCH (RAG) =====
     DOCUMENT_SEARCH_KEYWORDS = [
+        # TODO: Add Persian keywords (e.g., "جستجو در اسناد", "در فایل‌های من", etc.)
         # English - Explicit
         "search documents", "search my documents", "search files",
         "find in documents", "look in my files", "check my documents",
@@ -148,6 +154,7 @@ class IntentDetector:
 
     # ===== AUDIO TRANSCRIPTION =====
     AUDIO_KEYWORDS = [
+        # TODO: Add Persian keywords (e.g., "رونویسی صوت", "تبدیل صدا به متن", etc.)
         # English
         "transcribe", "transcription", "speech to text",
         "convert audio", "audio to text", "listen to",
@@ -164,6 +171,7 @@ class IntentDetector:
 
     # ===== DOCUMENT/CODE ANALYSIS =====
     ANALYSIS_KEYWORDS = [
+        # TODO: Add Persian keywords (e.g., "تحلیل سند", "بررسی کد", "خلاصه کردن", etc.)
         # Document analysis
         "analyze document", "analyze file", "review document",
         "summarize document", "explain document", "what is in",
@@ -422,49 +430,6 @@ class IntentDetector:
             return message
 
         return query
-
-    # ===== BACKWARD COMPATIBILITY METHODS =====
-
-    def detect_image_intent(self, message: str) -> tuple[bool, Optional[str]]:
-        """
-        Legacy method for backward compatibility.
-        Detect if the message is requesting image generation.
-
-        Args:
-            message: User message text
-
-        Returns:
-            Tuple of (is_image_request, extracted_prompt)
-        """
-        intents = self.detect_intents(message)
-        image_intents = [i for i in intents if i.intent_type == IntentType.IMAGE_GENERATION]
-
-        if image_intents:
-            intent = image_intents[0]
-            return True, intent.extracted_query
-
-        return False, None
-
-    def should_generate_image(
-        self,
-        message: str,
-        explicit_request: bool = False,
-    ) -> tuple[bool, Optional[str]]:
-        """
-        Legacy method for backward compatibility.
-        Determine if an image should be generated.
-
-        Args:
-            message: User message
-            explicit_request: If True, user explicitly requested via button
-
-        Returns:
-            Tuple of (should_generate, image_prompt)
-        """
-        if explicit_request:
-            return True, message
-
-        return self.detect_image_intent(message)
 
 
 # Global intent detector instance

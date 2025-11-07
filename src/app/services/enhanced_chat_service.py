@@ -373,10 +373,6 @@ class EnhancedChatService:
             if intent_results:
                 response["intent_results"] = intent_results
 
-                # Backward compatibility: keep generated_image at top level
-                if "generated_image" in intent_results:
-                    response["generated_image"] = intent_results["generated_image"]
-
             return response
 
         except Exception as e:

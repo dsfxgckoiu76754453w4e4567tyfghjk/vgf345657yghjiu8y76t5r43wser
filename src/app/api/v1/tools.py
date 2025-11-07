@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.db.session import get_db
+from app.db.base import get_db
 from app.schemas.tools import (
     AhkamRequest,
     AhkamResponse,

@@ -38,7 +38,7 @@ class ASRService:
         self,
         audio_data: bytes,
         audio_format: str = "wav",
-        language: str = "ar",  # Arabic by default
+        language: str = "fa",  # Persian by default
         model: Optional[str] = None,
     ) -> dict:
         """
@@ -47,7 +47,7 @@ class ASRService:
         Args:
             audio_data: Audio file bytes
             audio_format: Audio format (wav, mp3, m4a, etc.)
-            language: Language code (ar, en, fa, ur)
+            language: Language code (fa, en, ar, ur)
             model: Specific model to use (optional)
 
         Returns:
@@ -143,9 +143,9 @@ class ASRService:
 
             # Map language codes to Google format (ISO-639-1 to BCP-47)
             language_map = {
-                "ar": "ar-SA",  # Arabic (Saudi Arabia)
                 "fa": "fa-IR",  # Persian (Iran)
                 "en": "en-US",  # English (US)
+                "ar": "ar-SA",  # Arabic (Saudi Arabia)
                 "ur": "ur-PK",  # Urdu (Pakistan)
             }
             google_language = language_map.get(language, f"{language}-IR")
@@ -239,9 +239,9 @@ class ASRService:
         """
         # Common languages for Islamic content
         languages = [
-            {"code": "ar", "name": "Arabic", "native_name": "العربية"},
-            {"code": "en", "name": "English", "native_name": "English"},
             {"code": "fa", "name": "Persian", "native_name": "فارسی"},
+            {"code": "en", "name": "English", "native_name": "English"},
+            {"code": "ar", "name": "Arabic", "native_name": "العربية"},
             {"code": "ur", "name": "Urdu", "native_name": "اردو"},
             {"code": "tr", "name": "Turkish", "native_name": "Türkçe"},
             {"code": "id", "name": "Indonesian", "native_name": "Bahasa Indonesia"},

@@ -153,14 +153,14 @@ class TranscribeAudioRequest(BaseModel):
     """Request schema for audio transcription."""
 
     language: str = Field(
-        default="ar", description="Language code (ar, en, fa, ur, tr, id, ms)"
+        default="fa", description="Language code (fa, en, ar, ur, tr, id, ms)"
     )
     model: Optional[str] = Field(default=None, description="Specific model (optional)")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "language": "ar",
+                "language": "fa",
                 "model": "whisper-1",
             }
         }
