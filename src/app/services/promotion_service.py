@@ -26,6 +26,7 @@ from app.db.base import Base
 from app.models.environment import EnvironmentPromotion
 from app.models.mixins import EnvironmentPromotionMixin
 from app.services.minio_storage_service import MinIOStorageService
+from app.services.qdrant_service import qdrant_service
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -544,6 +545,60 @@ class EnvironmentPromotionService:
             source=f"{source_env_bucket}/{source_object}",
             target=f"{target_env_bucket}/{source_object}",
         )
+
+    async def _copy_qdrant_vectors(
+        self,
+        item_id: UUID,
+        base_collection: str,
+        source_env: str,
+        target_env: str,
+    ):
+        """
+        Copy Qdrant vectors for an item between environments.
+
+        Args:
+            item_id: ID of the item (used as point ID in Qdrant)
+            base_collection: Base collection name (e.g., "islamic_knowledge")
+            source_env: Source environment
+            target_env: Target environment
+        """
+        # Get environment-specific collection names
+        source_collection = qdrant_service.get_env_collection_name(base_collection, source_env)
+        target_collection = qdrant_service.get_env_collection_name(base_collection, target_env)
+
+        logger.info(
+            "copying_qdrant_vectors",
+            item_id=str(item_id),
+            source_collection=source_collection,
+            target_collection=target_collection,
+        )
+
+        try:
+            # Copy vectors using Qdrant service
+            copied_count = await qdrant_service.copy_points_to_collection(
+                point_ids=[item_id],
+                source_collection=source_collection,
+                target_collection=target_collection,
+            )
+
+            logger.info(
+                "qdrant_vectors_copied",
+                item_id=str(item_id),
+                source_collection=source_collection,
+                target_collection=target_collection,
+                copied_count=copied_count,
+            )
+
+        except Exception as e:
+            logger.error(
+                "qdrant_vector_copy_failed",
+                item_id=str(item_id),
+                source_collection=source_collection,
+                target_collection=target_collection,
+                error=str(e),
+            )
+            # Don't raise - vector copying is optional
+            # Some items may not have vectors yet
 
     # ========================================================================
     # Rollback

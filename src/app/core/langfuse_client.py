@@ -13,16 +13,25 @@ logger = get_logger(__name__)
 if settings.langfuse_enabled:
     from langfuse import Langfuse
 
-    # Initialize Langfuse client
-    langfuse_client = Langfuse(
-        public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
-        host=settings.langfuse_host,
-    )
+    # Initialize Langfuse client with optional environment-specific project
+    # If langfuse_project_name is set, it will use environment-specific projects
+    # e.g., "wisqu-dev", "wisqu-stage", "wisqu-prod"
+    langfuse_kwargs = {
+        "public_key": settings.langfuse_public_key,
+        "secret_key": settings.langfuse_secret_key,
+        "host": settings.langfuse_host,
+    }
+
+    # Add environment-specific release tag
+    if hasattr(settings, "langfuse_release"):
+        langfuse_kwargs["release"] = f"{settings.langfuse_release}-{settings.environment}"
+
+    langfuse_client = Langfuse(**langfuse_kwargs)
 
     logger.info(
         "langfuse_client_initialized",
         host=settings.langfuse_host,
+        environment=settings.environment,
         enabled=True
     )
 else:
@@ -142,12 +151,24 @@ def trace_request(
         yield NoOpSpan()
         return
 
+    # Add environment to metadata and tags
+    env_metadata = {
+        "environment": settings.environment,
+        "is_production": settings.is_production,
+        **(metadata or {}),
+    }
+
+    env_tags = [
+        settings.environment,  # Add environment as tag
+        *(tags or []),
+    ]
+
     trace = langfuse_client.trace(
         name=name,
         user_id=user_id,
         session_id=session_id,
-        metadata=metadata or {},
-        tags=tags or [],
+        metadata=env_metadata,
+        tags=env_tags,
     )
 
     try:

@@ -19,10 +19,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.mixins import EnvironmentPromotionMixin, TimestampMixin
 
 
-class Conversation(Base):
-    """User conversations/chat sessions."""
+class Conversation(Base, EnvironmentPromotionMixin, TimestampMixin):
+    """
+    User conversations/chat sessions.
+
+    Environment-aware for testing:
+    - Test conversations created in dev/stage environments
+    - Real conversations in prod
+    - Can promote test conversation patterns for documentation
+    """
 
     __tablename__ = "conversations"
 
@@ -48,13 +56,8 @@ class Conversation(Base):
     message_count: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens_used: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    # NOTE: Timestamps (created_at, updated_at) provided by TimestampMixin
+
     last_message_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -76,8 +79,15 @@ class Conversation(Base):
         return f"<Conversation(id={self.id}, mode={self.mode})>"
 
 
-class Message(Base):
-    """Chat messages in conversations."""
+class Message(Base, EnvironmentPromotionMixin, TimestampMixin):
+    """
+    Chat messages in conversations.
+
+    Environment-aware for cost tracking:
+    - Messages in dev/stage for testing and cost validation
+    - Production messages in prod
+    - Can analyze test message patterns for improvements
+    """
 
     __tablename__ = "messages"
 
@@ -154,10 +164,8 @@ class Message(Base):
     is_edited: Mapped[bool] = mapped_column(Boolean, default=False)
     generation_stopped_by_user: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    # NOTE: Timestamps (created_at, updated_at) provided by TimestampMixin
+
     edited_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

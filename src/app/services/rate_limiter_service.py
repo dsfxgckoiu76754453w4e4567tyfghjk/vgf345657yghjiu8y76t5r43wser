@@ -14,13 +14,39 @@ settings = get_settings()
 
 
 class RateLimiterService:
-    """Service for rate limiting API requests using Redis."""
+    """
+    Service for rate limiting API requests using Redis.
+
+    Environment-aware:
+    - Uses environment-specific Redis DB numbers
+    - dev: DB 0-2, test: DB 3-5, stage: DB 6-8, prod: DB 9-11
+    - Ensures rate limits are isolated per environment
+    """
 
     def __init__(self):
         """Initialize rate limiter service."""
-        # Redis connection
-        redis_url = getattr(settings, "redis_url", "redis://localhost:6379/0")
+        # Get environment-specific Redis DB number for rate limiting
+        redis_db = settings.get_redis_db("rate_limit")
+
+        # Parse Redis URL and replace DB number
+        base_redis_url = getattr(settings, "redis_url", "redis://localhost:6379")
+
+        # Remove existing DB number if present
+        if "/" in base_redis_url:
+            base_url = base_redis_url.rsplit("/", 1)[0]
+        else:
+            base_url = base_redis_url
+
+        # Add environment-specific DB number
+        redis_url = f"{base_url}/{redis_db}"
+
         self.redis = redis.from_url(redis_url, decode_responses=True)
+
+        logger.info(
+            "rate_limiter_initialized",
+            environment=settings.environment,
+            redis_db=redis_db,
+        )
 
     async def check_rate_limit(
         self,
