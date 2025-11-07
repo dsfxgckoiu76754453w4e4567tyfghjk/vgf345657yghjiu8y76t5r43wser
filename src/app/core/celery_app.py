@@ -7,16 +7,22 @@ This module sets up Celery with:
 - Environment-aware configuration
 - Priority-based queue routing
 - Auto-discovery of tasks
+- Prometheus metrics integration
 """
 
+import time
 from celery import Celery, signals
 from celery.schedules import crontab
 from kombu import Exchange, Queue
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core import metrics
 
 logger = get_logger(__name__)
+
+# Task timing storage (for duration tracking)
+_task_start_times = {}
 
 # ============================================================================
 # CELERY APPLICATION INITIALIZATION
@@ -253,12 +259,29 @@ celery_app.conf.beat_schedule = {
 
 @signals.task_prerun.connect
 def task_prerun_handler(sender=None, task_id=None, task=None, **kwargs):
-    """Log task start."""
+    """Log task start and track metrics."""
+    # Extract queue name from routing key
+    queue = 'unknown'
+    if hasattr(task, 'request') and hasattr(task.request, 'delivery_info'):
+        routing_key = task.request.delivery_info.get('routing_key', '')
+        if 'high' in routing_key:
+            queue = 'high_priority'
+        elif 'medium' in routing_key:
+            queue = 'medium_priority'
+        elif 'low' in routing_key:
+            queue = 'low_priority'
+
+    # Track task submission in Prometheus
+    metrics.track_task_submission(task.name, queue)
+
+    # Store start time for duration calculation
+    _task_start_times[task_id] = time.time()
+
     logger.info(
         "task_started",
         task_id=task_id,
         task_name=task.name,
-        queue=task.request.delivery_info.get('routing_key') if hasattr(task, 'request') else None,
+        queue=queue,
         args=str(kwargs.get('args', []))[:100],
         kwargs_keys=list(kwargs.get('kwargs', {}).keys()),
         environment=settings.environment,
@@ -267,13 +290,36 @@ def task_prerun_handler(sender=None, task_id=None, task=None, **kwargs):
 
 @signals.task_postrun.connect
 def task_postrun_handler(sender=None, task_id=None, task=None, retval=None, **kwargs):
-    """Log task completion."""
+    """Log task completion and track metrics."""
     state = kwargs.get('state', 'UNKNOWN')
+
+    # Extract queue name
+    queue = 'unknown'
+    if hasattr(task, 'request') and hasattr(task.request, 'delivery_info'):
+        routing_key = task.request.delivery_info.get('routing_key', '')
+        if 'high' in routing_key:
+            queue = 'high_priority'
+        elif 'medium' in routing_key:
+            queue = 'medium_priority'
+        elif 'low' in routing_key:
+            queue = 'low_priority'
+
+    # Calculate duration
+    duration = 0.0
+    if task_id in _task_start_times:
+        duration = time.time() - _task_start_times[task_id]
+        del _task_start_times[task_id]
+
+    # Track task completion in Prometheus
+    if state == 'SUCCESS':
+        metrics.track_task_completion(sender.name, queue, duration)
+
     logger.info(
         "task_completed",
         task_id=task_id,
         task_name=sender.name,
         state=state,
+        duration=f"{duration:.2f}s",
         result_preview=str(retval)[:100] if retval else None,
         environment=settings.environment,
     )
@@ -281,7 +327,26 @@ def task_postrun_handler(sender=None, task_id=None, task=None, retval=None, **kw
 
 @signals.task_failure.connect
 def task_failure_handler(sender=None, task_id=None, exception=None, **kwargs):
-    """Log task failure."""
+    """Log task failure and track metrics."""
+    # Extract queue name
+    queue = 'unknown'
+    task = kwargs.get('task')
+    if task and hasattr(task, 'request') and hasattr(task.request, 'delivery_info'):
+        routing_key = task.request.delivery_info.get('routing_key', '')
+        if 'high' in routing_key:
+            queue = 'high_priority'
+        elif 'medium' in routing_key:
+            queue = 'medium_priority'
+        elif 'low' in routing_key:
+            queue = 'low_priority'
+
+    # Track task failure in Prometheus
+    metrics.track_task_failure(sender.name, queue)
+
+    # Clean up start time if exists
+    if task_id in _task_start_times:
+        del _task_start_times[task_id]
+
     logger.error(
         "task_failed",
         task_id=task_id,
@@ -295,13 +360,28 @@ def task_failure_handler(sender=None, task_id=None, exception=None, **kwargs):
 
 @signals.task_retry.connect
 def task_retry_handler(sender=None, task_id=None, reason=None, **kwargs):
-    """Log task retry."""
+    """Log task retry and track metrics."""
+    # Extract queue name
+    queue = 'unknown'
+    request = kwargs.get('request')
+    if request and hasattr(request, 'delivery_info'):
+        routing_key = request.delivery_info.get('routing_key', '')
+        if 'high' in routing_key:
+            queue = 'high_priority'
+        elif 'medium' in routing_key:
+            queue = 'medium_priority'
+        elif 'low' in routing_key:
+            queue = 'low_priority'
+
+    # Track task retry in Prometheus
+    metrics.track_task_retry(sender.name, queue)
+
     logger.warning(
         "task_retrying",
         task_id=task_id,
         task_name=sender.name,
         reason=str(reason),
-        request_retries=kwargs.get('request', {}).get('retries', 0),
+        request_retries=request.retries if request and hasattr(request, 'retries') else 0,
         environment=settings.environment,
     )
 
