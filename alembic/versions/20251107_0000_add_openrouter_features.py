@@ -78,7 +78,7 @@ def upgrade() -> None:
         sa.Column('file_size_bytes', sa.Integer(), nullable=True),
         sa.Column('mime_type', sa.String(length=100), nullable=True),
         sa.Column('processing_cost_usd', sa.Numeric(precision=10, scale=6), nullable=True),
-        sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('attachment_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.CheckConstraint("attachment_type IN ('image', 'pdf', 'audio')", name='check_attachment_type'),
         sa.ForeignKeyConstraint(['message_id'], ['messages.id'], ),

@@ -272,7 +272,7 @@ class MessageAttachment(Base):
 
     # Processing details
     processing_cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    attachment_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
