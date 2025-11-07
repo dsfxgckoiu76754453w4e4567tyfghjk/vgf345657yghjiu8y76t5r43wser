@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     enable_caching: bool | None = Field(None, description="Enable prompt caching")
     stream: bool = Field(False, description="Enable streaming response")
     response_schema: dict[str, Any] | None = Field(None, description="JSON schema for structured output")
+    auto_detect_images: bool = Field(True, description="Auto-detect image generation requests")
 
 
 class ChatResponse(BaseModel):
@@ -46,6 +47,7 @@ class ChatResponse(BaseModel):
     total_cost_usd: float | None = None
     fallback_used: bool = False
     final_model_used: str | None = None
+    generated_image: dict[str, Any] | None = None
 
 
 @router.post("/", response_model=ChatResponse)
@@ -66,6 +68,7 @@ async def send_message(
     - **enable_caching**: Enable prompt caching (default from config)
     - **stream**: Enable streaming response (returns SSE)
     - **response_schema**: Optional JSON schema for structured output
+    - **auto_detect_images**: Auto-detect image generation requests (default True)
 
     Features:
     - Automatic prompt caching for system prompts and conversation history
@@ -73,9 +76,16 @@ async def send_message(
     - Usage tracking with detailed token breakdown
     - Structured outputs with JSON schema validation
     - Cache-aware cost optimization
+    - **Smart image detection**: Automatically generates images when user mentions
+      "generate image", "create picture", etc. in their message
+
+    Image Generation (2 Ways):
+    1. **Explicit**: Call /api/v1/images/generate endpoint directly
+    2. **Automatic**: Just mention image generation in your chat message
+       (e.g., "generate an image of a mosque at sunset")
 
     Returns:
-    - If stream=false: Complete response with usage metadata
+    - If stream=false: Complete response with usage metadata (may include generated_image)
     - If stream=true: Server-Sent Events (SSE) stream
     """
     try:
@@ -94,6 +104,7 @@ async def send_message(
                     enable_caching=request_data.enable_caching,
                     enable_streaming=True,
                     response_schema=request_data.response_schema,
+                    auto_detect_images=request_data.auto_detect_images,
                 ):
                     yield f"data: {chunk}\n\n"
 
@@ -120,6 +131,7 @@ async def send_message(
             enable_caching=request_data.enable_caching,
             enable_streaming=False,
             response_schema=request_data.response_schema,
+            auto_detect_images=request_data.auto_detect_images,
         )
 
         logger.info(
@@ -140,6 +152,7 @@ async def send_message(
             total_cost_usd=result.get("total_cost_usd"),
             fallback_used=result.get("fallback_used", False),
             final_model_used=result.get("final_model_used"),
+            generated_image=result.get("generated_image"),
         )
 
     except ValueError as e:

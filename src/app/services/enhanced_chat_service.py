@@ -10,6 +10,8 @@ from app.core.logging import get_logger
 from app.models.chat import Conversation, Message
 from app.services.openrouter_service import OpenRouterService
 from app.services.subscription_service import subscription_service
+from app.services.intent_detector import intent_detector
+from app.services.image_generation_service import image_generation_service
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
@@ -26,6 +28,7 @@ class EnhancedChatService:
     - Streaming support
     - Structured outputs
     - User tracking for cache stickiness
+    - Automatic image generation detection
     """
 
     def __init__(self):
@@ -45,6 +48,7 @@ class EnhancedChatService:
         enable_caching: bool | None = None,
         enable_streaming: bool = False,
         response_schema: dict[str, Any] | None = None,
+        auto_detect_images: bool = True,
     ) -> dict[str, Any] | AsyncGenerator[str, None]:
         """
         Send a chat message and get a response.
@@ -61,10 +65,11 @@ class EnhancedChatService:
             enable_caching: Enable prompt caching (default from config)
             enable_streaming: Enable streaming response
             response_schema: Optional JSON schema for structured output
+            auto_detect_images: Auto-detect image generation requests (default True)
 
         Returns:
             If streaming: AsyncGenerator yielding chunks
-            If not streaming: Complete response dict
+            If not streaming: Complete response dict (may include generated_image)
         """
         # Check user's subscription and quota
         try:
@@ -72,6 +77,45 @@ class EnhancedChatService:
         except ValueError as e:
             logger.warning("quota_exceeded", user_id=str(user_id), error=str(e))
             raise
+
+        # Detect image generation intent (if enabled)
+        generated_image = None
+        if auto_detect_images and settings.image_generation_enabled:
+            should_generate, image_prompt = intent_detector.should_generate_image(
+                message=message_content,
+                explicit_request=False,
+            )
+
+            if should_generate and image_prompt:
+                try:
+                    logger.info(
+                        "auto_image_generation_detected",
+                        user_id=str(user_id),
+                        conversation_id=str(conversation_id),
+                        prompt=image_prompt,
+                    )
+
+                    # Generate image
+                    generated_image = await image_generation_service.generate_image(
+                        prompt=image_prompt,
+                        user_id=user_id,
+                        db=db,
+                        conversation_id=conversation_id,
+                    )
+
+                    logger.info(
+                        "auto_image_generation_success",
+                        user_id=str(user_id),
+                        image_id=str(generated_image["id"]),
+                    )
+                except Exception as e:
+                    # Don't fail the entire chat if image generation fails
+                    logger.warning(
+                        "auto_image_generation_failed",
+                        user_id=str(user_id),
+                        error=str(e),
+                    )
+                    # Continue with chat response
 
         # Build messages from conversation history
         messages = await self._build_messages(
@@ -169,7 +213,7 @@ class EnhancedChatService:
                 cached=result.get("cached_tokens_read", 0),
             )
 
-            return {
+            response = {
                 "message_id": assistant_message.id,
                 "content": response_content,
                 "model": result["model"],
@@ -181,6 +225,12 @@ class EnhancedChatService:
                 "fallback_used": result.get("fallback_used", False),
                 "final_model_used": result.get("final_model_used"),
             }
+
+            # Add generated image if available
+            if generated_image:
+                response["generated_image"] = generated_image
+
+            return response
 
         except Exception as e:
             logger.error(
