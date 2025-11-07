@@ -1,0 +1,552 @@
+version: '3.8'
+
+# ============================================================================
+# SHIA ISLAMIC CHATBOT - PRODUCTION DEPLOYMENT
+# ============================================================================
+#
+# SAFETY MEASURES:
+# - All containers prefixed with "shia-chatbot-" to avoid conflicts
+# - Separate network "chatbot-network" isolated from other containers
+# - Unique ports for all exposed services
+# - Resource limits optimized for 16GB RAM / 4 cores
+# - Health checks for all critical services
+#
+# ARCHITECTURE:
+# - 3 FastAPI app replicas (load balanced by NGINX)
+# - 2 High-priority Celery workers
+# - 1 Medium-priority Celery worker
+# - 1 Low-priority Celery worker
+# - 1 Celery Beat scheduler
+# - 1 Flower monitoring dashboard
+# - NGINX load balancer
+# - Shared: PostgreSQL, Redis, Qdrant, MinIO
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # NGINX LOAD BALANCER
+  # ==========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: shia-chatbot-nginx
+    ports:
+      - "8100:80"      # HTTP (using 8100 to avoid conflict with port 80)
+      - "8443:443"     # HTTPS (using 8443 to avoid conflict with port 443)
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      app-1:
+        condition: service_healthy
+      app-2:
+        condition: service_healthy
+      app-3:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  # ==========================================================================
+  # FASTAPI APPLICATION REPLICAS (Stateless, Load Balanced)
+  # ==========================================================================
+  app-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shia-chatbot-app-1
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-prod}
+      - INSTANCE_ID=app-1
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-shia_chatbot}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/2
+      - QDRANT_URL=http://qdrant:6333
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-in-production}
+    volumes:
+      - app-logs-1:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  app-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shia-chatbot-app-2
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-prod}
+      - INSTANCE_ID=app-2
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-shia_chatbot}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/2
+      - QDRANT_URL=http://qdrant:6333
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-in-production}
+    volumes:
+      - app-logs-2:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  app-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shia-chatbot-app-3
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-prod}
+      - INSTANCE_ID=app-3
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-shia_chatbot}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/2
+      - QDRANT_URL=http://qdrant:6333
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-in-production}
+    volumes:
+      - app-logs-3:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ==========================================================================
+  # CELERY WORKERS (Distributed Task Processing)
+  # ==========================================================================
+
+  # High Priority Workers (Chat, Images, ASR, Web Search)
+  celery-worker-high-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: shia-chatbot-celery-high-1
+    command: >
+      celery -A app.core.celery_app worker
+      --loglevel=info
+      --queues=high_priority
+      --concurrency=8
+      --hostname=high-worker-1@%h
+      --max-tasks-per-child=500
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-prod}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-shia_chatbot}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/2
+      - QDRANT_URL=http://qdrant:6333
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    volumes:
+      - celery-logs-high-1:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1.5G
+        reservations:
+          cpus: '0.5'
+          memory: 768M
+
+  celery-worker-high-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: shia-chatbot-celery-high-2
+    command: >
+      celery -A app.core.celery_app worker
+      --loglevel=info
+      --queues=high_priority
+      --concurrency=8
+      --hostname=high-worker-2@%h
+      --max-tasks-per-child=500
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-prod}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-shia_chatbot}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/2
+      - QDRANT_URL=http://qdrant:6333
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    volumes:
+      - celery-logs-high-2:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1.5G
+        reservations:
+          cpus: '0.5'
+          memory: 768M
+
+  # Medium Priority Worker (Embeddings, Files, Promotion)
+  celery-worker-medium:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: shia-chatbot-celery-medium
+    command: >
+      celery -A app.core.celery_app worker
+      --loglevel=info
+      --queues=medium_priority
+      --concurrency=4
+      --hostname=medium-worker@%h
+      --max-tasks-per-child=300
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-prod}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-shia_chatbot}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/2
+      - QDRANT_URL=http://qdrant:6333
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    volumes:
+      - celery-logs-medium:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+  # Low Priority Worker (Emails, Cleanup, Langfuse)
+  celery-worker-low:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: shia-chatbot-celery-low
+    command: >
+      celery -A app.core.celery_app worker
+      --loglevel=info
+      --queues=low_priority
+      --concurrency=10
+      --hostname=low-worker@%h
+      --max-tasks-per-child=1000
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-prod}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-shia_chatbot}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/2
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    volumes:
+      - celery-logs-low:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  # ==========================================================================
+  # CELERY BEAT (Scheduler for Cron Jobs)
+  # ==========================================================================
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: shia-chatbot-celery-beat
+    command: >
+      celery -A app.core.celery_app beat
+      --loglevel=info
+      --schedule=/tmp/celerybeat-schedule
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-prod}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-shia_chatbot}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    volumes:
+      - celery-beat-schedule:/tmp
+      - celery-logs-beat:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 128M
+
+  # ==========================================================================
+  # FLOWER (Celery Monitoring Dashboard)
+  # ==========================================================================
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: shia-chatbot-flower
+    command: >
+      celery -A app.core.celery_app flower
+      --port=5555
+      --broker=redis://redis:6379/2
+      --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-changeme}
+    ports:
+      - "5556:5555"  # Using 5556 to avoid conflicts
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/2
+    depends_on:
+      - redis
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  # ==========================================================================
+  # SHARED INFRASTRUCTURE (No services defined here)
+  # ==========================================================================
+  # NOTE: This docker-compose connects to your EXISTING containers:
+  # - shia-chatbot-postgres (already running on chatbot-network)
+  # - shia-chatbot-redis (already running on chatbot-network)
+  # - shia-chatbot-qdrant (already running on chatbot-network)
+  #
+  # We reference them via network names in the environment variables above
+
+  # MinIO - Optional (create if not exists)
+  minio:
+    image: minio/minio:latest
+    container_name: shia-chatbot-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9010:9000"   # API port (using 9010 to avoid conflicts)
+      - "9011:9001"   # Console port (using 9011 to avoid conflicts)
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio-data:/data
+    networks:
+      - chatbot-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+# ==========================================================================
+# NETWORKS
+# ==========================================================================
+networks:
+  chatbot-network:
+    # Use the existing network if it exists, create if it doesn't
+    external: false
+    driver: bridge
+    name: chatbot-network
+
+# ==========================================================================
+# VOLUMES
+# ==========================================================================
+volumes:
+  # Application logs
+  app-logs-1:
+  app-logs-2:
+  app-logs-3:
+
+  # Celery logs
+  celery-logs-high-1:
+  celery-logs-high-2:
+  celery-logs-medium:
+  celery-logs-low:
+  celery-logs-beat:
+
+  # Celery beat schedule
+  celery-beat-schedule:
+
+  # NGINX logs
+  nginx-logs:
+
+  # MinIO data (if creating new instance)
+  minio-data:
