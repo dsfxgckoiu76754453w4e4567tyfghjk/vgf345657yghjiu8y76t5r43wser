@@ -99,6 +99,39 @@ class Settings(BaseSettings):
     # Web search engine (native, exa, or None for automatic)
     web_search_engine: Literal["native", "exa"] | None = Field(default=None)
 
+    # Prompt Caching
+    prompt_caching_enabled: bool = Field(default=True)
+    cache_control_strategy: Literal["auto", "manual"] = Field(default="auto")
+    cache_min_tokens: int = Field(default=1024)  # Minimum tokens for OpenAI caching
+
+    # Model Routing & Fallbacks
+    model_routing_enabled: bool = Field(default=True)
+    default_fallback_models: list[str] = Field(
+        default_factory=lambda: []
+    )  # Fallback models for routing
+    routing_strategy: Literal["auto", "price", "latency", "uptime"] = Field(default="auto")
+    enable_auto_router: bool = Field(default=False)  # Use openrouter/auto
+
+    # Usage Accounting
+    usage_tracking_enabled: bool = Field(default=True)
+    track_user_ids: bool = Field(default=True)  # Send user parameter to OpenRouter
+
+    # Image Generation
+    image_generation_enabled: bool = Field(default=False)
+    image_generation_models: list[str] = Field(
+        default_factory=lambda: ["google/gemini-2.5-flash-image-preview"]
+    )
+    image_storage_type: Literal["database", "s3", "local"] = Field(default="database")
+    image_max_size_mb: int = Field(default=10)
+
+    # Structured Outputs
+    structured_outputs_enabled: bool = Field(default=True)
+
+    # Multimodal Processing
+    pdf_processing_enabled: bool = Field(default=True)
+    audio_processing_enabled: bool = Field(default=True)
+    pdf_skip_parsing: bool = Field(default=False)  # For cost control
+
     # Reranker
     reranker_provider: Literal["cohere", "vertex"] = Field(default="cohere")
     reranker_model: str = Field(default="rerank-3.5")
