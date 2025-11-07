@@ -11,6 +11,7 @@ from app.api.v1 import (
     conversations,
     documents,
     external_api,
+    health,
     images,
     leaderboard,
     presets,
@@ -20,6 +21,9 @@ from app.api.v1 import (
 )
 
 api_router = APIRouter()
+
+# Health checks (no auth required)
+api_router.include_router(health.router, prefix="/health", tags=["Health & Monitoring"])
 
 # Include all v1 routers
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
