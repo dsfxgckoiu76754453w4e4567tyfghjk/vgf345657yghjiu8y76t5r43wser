@@ -9,7 +9,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.models.external_api import ExternalAPIClient, ExternalAPIUsageLog
+from app.models.external_api import ExternalAPIClient, APIUsageLog
 
 logger = get_logger(__name__)
 
@@ -168,10 +168,10 @@ class ExternalAPIClientService:
         # Get usage statistics
         today = datetime.utcnow().date()
         usage_today_result = await self.db.execute(
-            select(func.count(ExternalAPIUsageLog.id)).where(
+            select(func.count(APIUsageLog.id)).where(
                 and_(
-                    ExternalAPIUsageLog.client_id == client_id,
-                    func.date(ExternalAPIUsageLog.timestamp) == today,
+                    APIUsageLog.client_id == client_id,
+                    func.date(APIUsageLog.timestamp) == today,
                 )
             )
         )
@@ -179,8 +179,8 @@ class ExternalAPIClientService:
 
         # Get total usage
         total_usage_result = await self.db.execute(
-            select(func.count(ExternalAPIUsageLog.id)).where(
-                ExternalAPIUsageLog.client_id == client_id
+            select(func.count(APIUsageLog.id)).where(
+                APIUsageLog.client_id == client_id
             )
         )
         total_usage = total_usage_result.scalar() or 0
@@ -428,7 +428,7 @@ class ExternalAPIClientService:
             ip_address: Client IP address
             user_agent: User agent string
         """
-        usage_log = ExternalAPIUsageLog(
+        usage_log = APIUsageLog(
             client_id=client_id,
             endpoint=endpoint,
             method=method,
@@ -483,10 +483,10 @@ class ExternalAPIClientService:
 
         # Total requests
         total_requests_result = await self.db.execute(
-            select(func.count(ExternalAPIUsageLog.id)).where(
+            select(func.count(APIUsageLog.id)).where(
                 and_(
-                    ExternalAPIUsageLog.client_id == client_id,
-                    ExternalAPIUsageLog.timestamp >= start_date,
+                    APIUsageLog.client_id == client_id,
+                    APIUsageLog.timestamp >= start_date,
                 )
             )
         )
@@ -494,10 +494,10 @@ class ExternalAPIClientService:
 
         # Average response time
         avg_response_time_result = await self.db.execute(
-            select(func.avg(ExternalAPIUsageLog.response_time_ms)).where(
+            select(func.avg(APIUsageLog.response_time_ms)).where(
                 and_(
-                    ExternalAPIUsageLog.client_id == client_id,
-                    ExternalAPIUsageLog.timestamp >= start_date,
+                    APIUsageLog.client_id == client_id,
+                    APIUsageLog.timestamp >= start_date,
                 )
             )
         )
@@ -505,11 +505,11 @@ class ExternalAPIClientService:
 
         # Error rate (4xx and 5xx)
         error_count_result = await self.db.execute(
-            select(func.count(ExternalAPIUsageLog.id)).where(
+            select(func.count(APIUsageLog.id)).where(
                 and_(
-                    ExternalAPIUsageLog.client_id == client_id,
-                    ExternalAPIUsageLog.timestamp >= start_date,
-                    ExternalAPIUsageLog.status_code >= 400,
+                    APIUsageLog.client_id == client_id,
+                    APIUsageLog.timestamp >= start_date,
+                    APIUsageLog.status_code >= 400,
                 )
             )
         )

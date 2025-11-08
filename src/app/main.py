@@ -6,7 +6,9 @@ from typing import Any, AsyncGenerator
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.core.config import settings
 from app.core.constants import (
@@ -79,6 +81,36 @@ if settings.is_production:
         TrustedHostMiddleware,
         allowed_hosts=["*"],  # Configure this properly in production
     )
+
+# ============================================================================
+# PROMETHEUS METRICS INSTRUMENTATION
+# ============================================================================
+
+# Initialize Prometheus instrumentation
+instrumentator = Instrumentator(
+    should_group_status_codes=True,
+    should_ignore_untemplated=False,
+    should_respect_env_var=True,
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=["/metrics"],
+    env_var_name="ENABLE_METRICS",
+    inprogress_name="http_requests_inprogress",
+    inprogress_labels=True,
+)
+
+# Instrument the app with default metrics
+instrumentator.instrument(app)
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    """
+    Prometheus metrics endpoint.
+
+    Returns:
+        Response: Prometheus metrics in text format
+    """
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health")

@@ -1210,7 +1210,647 @@ This gives you:
 
 ---
 
+## ✅ IMPLEMENTATION STATUS
+
+**Status:** ✅ **IMPLEMENTED** (Phases 1 & 2 Complete)
+**Implementation Date:** 2025-11-07
+**Version:** 2.0.0
+
+The multi-environment architecture with data promotion pipeline has been successfully implemented following the recommendations above. See the implementation details below.
+
+---
+
+# 📦 IMPLEMENTATION DOCUMENTATION
+
+## Phase 1: Core Environment Infrastructure ✅ COMPLETED
+
+### 1.1 Environment Mixins (`src/app/models/mixins.py`)
+
+Created comprehensive mixin system for environment awareness:
+
+#### `EnvironmentPromotionMixin`
+Automatically adds environment tracking, test data detection, and promotion support to any model:
+
+```python
+from app.models.mixins import EnvironmentPromotionMixin
+
+class MyModel(Base, EnvironmentPromotionMixin):
+    __tablename__ = "my_table"
+    # ... your fields
+
+    # Automatically gets:
+    # - environment (dev/stage/prod)
+    # - is_test_data, test_data_reason
+    # - is_promotable, promotion_status
+    # - source_id, source_environment
+    # - promoted_at, promoted_by_user_id
+    # - Helper methods: approve_for_promotion(), mark_as_test_data(), etc.
+```
+
+**Key Fields:**
+- `environment`: Current environment (dev, stage, prod)
+- `is_test_data`: Auto-detected or manually marked test data
+- `test_data_reason`: Why marked as test data (e.g., "matches pattern: John Doe")
+- `is_promotable`: Can this item be promoted?
+- `promotion_status`: draft, approved, promoted, deprecated
+- `source_id`: ID in source environment (for linking promoted items)
+- `source_environment`: Where this was promoted from
+
+**Helper Properties:**
+- `is_production`: Check if this is production data
+- `is_development`: Check if this is development data
+- `is_staging`: Check if this is staging data
+- `can_be_promoted`: Check if ready for promotion
+- `is_promoted_item`: Check if this was promoted from another environment
+
+#### `TimestampMixin`
+- `created_at`: Auto-set on creation
+- `updated_at`: Auto-updated on modification
+
+#### `SoftDeleteMixin`
+- `deleted_at`: Soft delete timestamp
+- `is_deleted`: Soft delete flag
+- Helper methods: `soft_delete()`, `restore()`, `is_active`
+
+### 1.2 Test Data Detection (`src/app/utils/test_data_detector.py`)
+
+Automatic test data detection with 40+ patterns:
+
+```python
+from app.utils.test_data_detector import TestDataDetector
+
+# Check if text is test data
+is_test, reason = TestDataDetector.is_test_data("John Doe")
+# Returns: (True, "Matches test pattern: john\\s*doe")
+
+# Check entire model instance
+is_test, reason = TestDataDetector.check_model(user_instance)
+
+# Scan and mark test data in database
+stats = await TestDataDetector.scan_and_mark_test_data(
+    db, User, "dev", batch_size=100
+)
+```
+
+**Built-in Patterns:**
+- Generic keywords: test, demo, dummy, sample, example
+- Test names: John Doe, Jane Doe, test user
+- Persian patterns: تست, آزمایش, نمونه
+- Email patterns: test@test.com, *@test.*
+- Sequential: test1, test2, user123
+- Lorem ipsum, placeholder text
+
+**Custom Patterns:**
+```python
+# Add organization-specific patterns
+TestDataDetector.add_custom_pattern(r"company-test-\\d+")
+```
+
+### 1.3 Environment Tracking Models (`src/app/models/environment.py`)
+
+#### `EnvironmentPromotion`
+Audit log for all environment promotions:
+
+```python
+promotion = EnvironmentPromotion(
+    promotion_type="stored_files",
+    source_environment="dev",
+    target_environment="stage",
+    items_promoted={
+        "promoted_ids": ["uuid1", "uuid2"],
+        "total_count": 2
+    },
+    status="success",  # pending, in_progress, success, failed, rolled_back
+    success_count=2,
+    error_count=0,
+    promoted_by_user_id=developer_id,
+    reason="Deploy approved RAG documents",
+    rollback_data={
+        "created_item_ids": ["new_uuid1", "new_uuid2"]
+    }
+)
+```
+
+**Key Features:**
+- Full audit trail of promotions
+- Success/error tracking
+- Rollback support with rollback data
+- Duration tracking
+- Detailed error logging
+
+#### `EnvironmentAccessLog`
+Tracks cross-environment access:
+
+```python
+access_log = EnvironmentAccessLog(
+    user_id=developer_id,
+    environment="prod",
+    access_type="data_access",  # login, test_account_create, api_call
+    reason="Debugging reported issue #123",
+    ip_address="192.168.1.1",
+    metadata={"ticket_id": "123"}
+)
+```
+
+#### `DeveloperAction`
+Tracks privileged developer actions in stage/prod:
+
+```python
+action = DeveloperAction(
+    developer_id=developer_id,
+    environment="prod",
+    action="create_test_account",
+    reason="Testing authentication flow for bug #456",
+    details={"test_user_email": "test@test.com"},
+    success=True
+)
+```
+
+### 1.4 Environment Configuration (`src/app/core/config.py`)
+
+Added environment-specific settings with auto-configuration:
+
+```python
+class Settings(BaseSettings):
+    # Environment tracking
+    environment: str = "dev"  # dev, test, stage, prod
+
+    # Retention policies (auto-configured based on environment)
+    environment_data_retention_days: int = 30  # dev: 30, stage: 90, prod: 365
+    environment_auto_cleanup_enabled: bool = True  # disabled in prod
+
+    # Promotion settings
+    promotion_enabled: bool = True
+    promotion_allowed_paths: str = "dev->stage,stage->prod,dev->prod"
+
+    # Helper methods
+    def get_bucket_name(self, base_bucket: str) -> str:
+        """Get environment-prefixed bucket name."""
+        return f"{self.environment}-{base_bucket}"
+        # wisqu-images → dev-wisqu-images (in dev)
+
+    def get_collection_name(self, base_collection: str) -> str:
+        """Get environment-specific Qdrant collection name."""
+        return f"{base_collection}_{self.environment}"
+        # islamic_knowledge → islamic_knowledge_dev
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "prod"
+```
+
+**Auto-Configuration:**
+- Retention policies adjust based on environment
+- Cleanup enabled in dev/stage, disabled in prod
+- Test accounts allowed but audited in prod
+
+### 1.5 Environment-Aware MinIO Storage (`src/app/services/minio_storage_service.py`)
+
+MinIO service automatically prefixes buckets by environment:
+
+```python
+# Upload file
+result = await minio_service.upload_file(
+    bucket="wisqu-images",
+    file_data=image_bytes,
+    filename="profile.jpg"
+)
+# Actual bucket: dev-wisqu-images (in dev environment)
+# Adds environment metadata tag
+
+# Download file (environment handled automatically)
+file_data = await minio_service.download_file(
+    bucket="wisqu-images",
+    object_name="profile.jpg"
+)
+```
+
+**Environment Isolation:**
+- All buckets auto-prefixed: `{env}-{bucket_name}`
+- Environment metadata added to all uploads
+- Separate buckets per environment prevent data mixing
+
+---
+
+## Phase 2: Promotion System & Tools ✅ COMPLETED
+
+### 2.1 Updated Models
+
+**StoredFile** and **UserStorageQuota** now include:
+- ✅ EnvironmentPromotionMixin
+- ✅ TimestampMixin
+- ✅ SoftDeleteMixin
+- ✅ Full environment awareness
+
+### 2.2 Environment-Scoped Repository (`src/app/repositories/base.py`)
+
+Base repository with automatic environment filtering:
+
+```python
+from app.repositories.base import EnvironmentAwareRepository
+
+class UserRepository(EnvironmentAwareRepository[User]):
+    def __init__(self, db: AsyncSession):
+        super().__init__(
+            db,
+            User,
+            auto_exclude_test_data=True  # Exclude test data in prod
+        )
+
+# Usage
+repo = UserRepository(db)
+
+# Automatically scoped to current environment
+users = await repo.get_all()  # Only current environment's users
+
+# Automatically excludes test data in production
+user = await repo.get_by_id(user_id)  # Excludes test data if in prod
+
+# Get promotable items
+promotable = await repo.get_promotable_items()  # Only approved, non-test items
+
+# Approve for promotion
+await repo.approve_for_promotion(item_id)
+
+# Mark as test data
+await repo.mark_as_test_data(item_id, reason="Contains placeholder text")
+
+# Cross-environment access (admin only)
+item = await repo.get_by_id_any_environment(item_id, "prod")
+```
+
+**Features:**
+- Automatic environment filtering
+- Test data exclusion (configurable)
+- Promotion helpers
+- Cross-environment queries for admin/debugging
+
+### 2.3 Promotion Service (`src/app/services/promotion_service.py`)
+
+Comprehensive promotion service for moving data between environments:
+
+```python
+from app.services.promotion_service import EnvironmentPromotionService
+
+service = EnvironmentPromotionService(db, minio_service)
+
+# Preview what will be promoted
+preview = await service.preview_promotion(
+    model_class=StoredFile,
+    source_env="dev",
+    target_env="stage",
+    item_ids=None  # None = all approved items
+)
+print(f"Will promote {preview.total_count} items")
+print(f"Total size: {preview.total_size_bytes} bytes")
+print(f"Errors: {preview.errors}")
+
+# Execute promotion
+result = await service.execute_promotion(
+    model_class=StoredFile,
+    source_env="dev",
+    target_env="stage",
+    promoted_by_user_id=developer_id,
+    reason="Deploy approved RAG documents",
+    item_ids=None  # None = all approved items
+)
+print(f"Promoted {result.success_count} items")
+print(f"Errors: {result.error_count}")
+
+# Rollback if needed
+await service.rollback_promotion(
+    promotion_id=result.promotion_id,
+    rolled_back_by_user_id=admin_id
+)
+```
+
+**Features:**
+- Preview before execution
+- Validation of promotion paths
+- Automatic file copying (MinIO)
+- Vector copying support (Qdrant) - placeholder for Phase 3
+- Full audit logging
+- Rollback support
+- Error tracking per item
+
+**Promotion Flow:**
+1. Validate promotion path (dev→stage allowed?)
+2. Query approved, non-test items
+3. Copy each item to target environment
+4. Copy associated files (MinIO)
+5. Update source items as "promoted"
+6. Create promotion audit record
+7. Store rollback data
+
+### 2.4 Promotion CLI Tool (`scripts/promote.py`)
+
+Command-line tool for managing promotions:
+
+```bash
+# Preview promotion
+python scripts/promote.py preview stored_files dev stage
+
+# Execute promotion
+python scripts/promote.py execute stored_files dev stage \
+    --user-id 12345678-1234-1234-1234-123456789abc \
+    --reason "Deploy approved RAG documents"
+
+# Promote specific items only
+python scripts/promote.py execute stored_files dev stage \
+    --user-id 12345678-1234-1234-1234-123456789abc \
+    --item-ids uuid1 uuid2 uuid3
+
+# Rollback promotion
+python scripts/promote.py rollback 87654321-4321-4321-4321-cba987654321 \
+    --user-id 12345678-1234-1234-1234-123456789abc
+
+# Scan for test data
+python scripts/promote.py scan-test-data dev stored_files
+
+# Approve item for promotion
+python scripts/promote.py approve stored_files 11111111-2222-3333-4444-555555555555
+```
+
+**Features:**
+- Interactive preview with counts and sizes
+- Validation before execution
+- Detailed error reporting
+- Color-coded output (✅ ❌ ⚠️)
+
+### 2.5 Environment Cleanup Job (`scripts/cleanup_environments.py`)
+
+Scheduled job for managing environment data lifecycle:
+
+```bash
+# Dry run (preview what will be deleted)
+python scripts/cleanup_environments.py --dry-run
+
+# Execute cleanup
+python scripts/cleanup_environments.py
+
+# Cleanup specific environment
+python scripts/cleanup_environments.py --environment dev
+
+# Cleanup specific model
+python scripts/cleanup_environments.py --model stored_files
+
+# Delete only test data (7+ days old)
+python scripts/cleanup_environments.py --test-data-only
+
+# Schedule with cron (daily at 2 AM)
+0 2 * * * cd /path/to/app && python scripts/cleanup_environments.py
+```
+
+**Features:**
+- Respects retention policies per environment
+- Never auto-deletes production data
+- Skips promoted items
+- Dry-run mode for safety
+- Detailed statistics
+- Test data only mode
+
+**Retention Policies:**
+- Dev: 30 days (auto-cleanup enabled)
+- Stage: 90 days (auto-cleanup enabled)
+- Prod: 365 days (auto-cleanup DISABLED, manual only)
+
+### 2.6 Database Migration (`alembic/versions/20251107_1400_add_environment_promotion_support.py`)
+
+Comprehensive migration that:
+- ✅ Adds EnvironmentPromotionMixin fields to stored_files
+- ✅ Adds EnvironmentPromotionMixin fields to user_storage_quotas
+- ✅ Creates environment_promotions table
+- ✅ Creates environment_access_logs table
+- ✅ Creates developer_actions table
+- ✅ Creates all necessary indexes
+- ✅ Sets default environment to 'prod' for existing data
+
+**Migration Commands:**
+```bash
+# Apply migration
+alembic upgrade head
+
+# Rollback if needed
+alembic downgrade -1
+```
+
+---
+
+## 🎯 Usage Examples
+
+### Example 1: Create and Promote RAG Document
+
+```python
+# 1. Create document in dev environment
+# (environment auto-set to 'dev' from settings)
+file = StoredFile(
+    filename="islamic_knowledge.pdf",
+    bucket="wisqu-documents",
+    purpose="rag_corpus",
+    # ... other fields
+)
+db.add(file)
+await db.commit()
+
+# 2. Test data auto-detection runs
+# (if filename contains test patterns, auto-marks as test data)
+
+# 3. Approve for promotion
+file.approve_for_promotion()
+# Sets: is_promotable=True, promotion_status='approved'
+await db.commit()
+
+# 4. Preview promotion
+preview = await promotion_service.preview_promotion(
+    StoredFile, "dev", "stage"
+)
+print(f"Will promote {preview.total_count} documents")
+
+# 5. Execute promotion
+result = await promotion_service.execute_promotion(
+    StoredFile, "dev", "stage",
+    promoted_by_user_id=developer_id,
+    reason="Deploy approved knowledge base"
+)
+print(f"Promoted {result.success_count} documents")
+
+# 6. Document now exists in both dev and stage
+# - Dev: original (marked as promoted)
+# - Stage: new copy (linked via source_id)
+```
+
+### Example 2: Scan and Clean Test Data
+
+```python
+# Scan dev environment for test data
+stats = await TestDataDetector.scan_and_mark_test_data(
+    db, StoredFile, "dev"
+)
+print(f"Marked {stats['marked_as_test']} items as test data")
+
+# Clean up old test data (7+ days old)
+# Using cleanup script
+subprocess.run([
+    "python", "scripts/cleanup_environments.py",
+    "--environment", "dev",
+    "--test-data-only"
+])
+```
+
+### Example 3: Cross-Environment Repository Usage
+
+```python
+from app.repositories.base import EnvironmentAwareRepository
+
+# Create environment-aware repository
+repo = EnvironmentAwareRepository(db, StoredFile)
+
+# Get all files in current environment (excludes test data in prod)
+files = await repo.get_all(limit=100)
+
+# Get promotable items
+promotable = await repo.get_promotable_items()
+
+# Approve item for promotion
+await repo.approve_for_promotion(file_id)
+
+# Mark as test data
+await repo.mark_as_test_data(
+    file_id,
+    reason="Developer test file"
+)
+
+# Admin: access item from different environment
+prod_file = await repo.get_by_id_any_environment(
+    file_id,
+    "prod"
+)
+```
+
+---
+
+## 🔒 Security Considerations
+
+### 1. Automatic Test Data Exclusion
+- Production queries automatically exclude test data
+- Configurable via `auto_exclude_test_data` parameter
+- 40+ built-in patterns for test data detection
+
+### 2. Promotion Validation
+- Validates promotion paths (dev→stage allowed, stage→dev blocked)
+- Checks promotion_enabled setting
+- Verifies items are approved and not test data
+
+### 3. Audit Logging
+- All promotions logged in environment_promotions table
+- Cross-environment access logged in environment_access_logs
+- Developer actions logged in developer_actions table
+
+### 4. Rollback Support
+- Rollback data stored for all promotions
+- Can reverse promotions if issues detected
+- Tracks who performed rollback
+
+### 5. Environment Isolation
+- MinIO: Separate buckets per environment
+- Qdrant: Separate collections per environment (Phase 3)
+- Redis: Separate DB numbers per environment (Phase 3)
+
+---
+
+## 📊 Monitoring and Metrics
+
+### Promotion Metrics
+Query `environment_promotions` table for:
+- Success rate by environment path
+- Average promotion duration
+- Most promoted models
+- Error rates
+
+```sql
+SELECT
+    promotion_type,
+    source_environment,
+    target_environment,
+    COUNT(*) as total_promotions,
+    SUM(success_count) as total_items_promoted,
+    SUM(error_count) as total_errors,
+    AVG(duration_seconds) as avg_duration
+FROM environment_promotions
+WHERE status = 'success'
+GROUP BY promotion_type, source_environment, target_environment;
+```
+
+### Test Data Detection
+```sql
+SELECT
+    environment,
+    COUNT(*) as total_test_items,
+    test_data_reason,
+    COUNT(*) as count
+FROM stored_files
+WHERE is_test_data = true
+GROUP BY environment, test_data_reason
+ORDER BY count DESC;
+```
+
+### Environment Distribution
+```sql
+SELECT
+    environment,
+    promotion_status,
+    COUNT(*) as count,
+    SUM(file_size_bytes) as total_bytes
+FROM stored_files
+WHERE is_deleted = false
+GROUP BY environment, promotion_status;
+```
+
+---
+
+## 🚀 Next Steps (Phase 3)
+
+### Planned Enhancements:
+
+1. **Qdrant Environment Isolation**
+   - Environment-specific collections
+   - Vector copying during promotion
+   - Collection naming: `{collection}_{environment}`
+
+2. **Redis Environment Isolation**
+   - Environment-specific DB numbers
+   - Cache isolation per environment
+   - DB mapping: dev=0-2, stage=6-8, prod=9-11
+
+3. **Langfuse Environment Projects**
+   - Separate projects per environment
+   - Environment tagging in traces
+   - Cross-environment LLM cost tracking
+
+4. **API Endpoints**
+   - REST API for promotion management
+   - Web UI for promotion review
+   - Real-time promotion status
+
+5. **Additional Model Updates**
+   - User model with EnvironmentPromotionMixin
+   - Conversation model
+   - Message model
+   - RAG document models
+
+6. **Enhanced Test Data Detection**
+   - ML-based test data detection
+   - Learn from manual markings
+   - Organization-specific pattern learning
+
+7. **Automated Promotion Pipelines**
+   - CI/CD integration
+   - Automatic promotion after tests pass
+   - Scheduled promotions (e.g., weekly stage→prod)
+
+---
+
 **Generated by:** Claude Code
-**Date:** 2025-11-06
-**Version:** 1.0.0
-**Status:** Architecture Recommendations - Ready for Review
+**Date:** 2025-11-07
+**Version:** 2.0.0
+**Status:** ✅ **IMPLEMENTED** - Phases 1 & 2 Complete

@@ -38,7 +38,7 @@ class ASRService:
         self,
         audio_data: bytes,
         audio_format: str = "wav",
-        language: str = "ar",  # Arabic by default
+        language: str = "fa",  # Persian by default
         model: Optional[str] = None,
     ) -> dict:
         """
@@ -47,7 +47,7 @@ class ASRService:
         Args:
             audio_data: Audio file bytes
             audio_format: Audio format (wav, mp3, m4a, etc.)
-            language: Language code (ar, en, fa, ur)
+            language: Language code (fa, en, ar, ur)
             model: Specific model to use (optional)
 
         Returns:
@@ -127,48 +127,101 @@ class ASRService:
         """
         Transcribe audio using Google Speech-to-Text.
 
-        This is a placeholder implementation. In production, you would:
-        1. Install google-cloud-speech
-        2. Set up credentials
-        3. Use the Speech-to-Text API
-
         Args:
             audio_data: Audio file bytes
             audio_format: Audio format
-            language: Language code
+            language: Language code (e.g., 'ar', 'fa', 'en')
 
         Returns:
             Transcription result
         """
         try:
-            # PLACEHOLDER: This is where you would implement Google Speech-to-Text
-            # from google.cloud import speech
-            #
-            # client = speech.SpeechClient()
-            # audio = speech.RecognitionAudio(content=audio_data)
-            # config = speech.RecognitionConfig(
-            #     encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-            #     language_code=language,
-            #     enable_automatic_punctuation=True,
-            # )
-            #
-            # response = client.recognize(config=config, audio=audio)
-            #
-            # text = " ".join([result.alternatives[0].transcript for result in response.results])
+            from google.cloud import speech
 
-            # For now, return placeholder
-            logger.warn(
-                "google_speech_placeholder",
-                message="Google Speech-to-Text not fully implemented",
+            # Initialize Google Speech client
+            client = speech.SpeechClient()
+
+            # Map language codes to Google format (ISO-639-1 to BCP-47)
+            language_map = {
+                "fa": "fa-IR",  # Persian (Iran)
+                "en": "en-US",  # English (US)
+                "ar": "ar-SA",  # Arabic (Saudi Arabia)
+                "ur": "ur-PK",  # Urdu (Pakistan)
+            }
+            google_language = language_map.get(language, f"{language}-IR")
+
+            # Map audio format to Google encoding
+            encoding_map = {
+                "wav": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                "mp3": speech.RecognitionConfig.AudioEncoding.MP3,
+                "flac": speech.RecognitionConfig.AudioEncoding.FLAC,
+                "ogg": speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
+                "webm": speech.RecognitionConfig.AudioEncoding.WEBM_OPUS,
+            }
+            encoding = encoding_map.get(
+                audio_format.lower(),
+                speech.RecognitionConfig.AudioEncoding.MP3
+            )
+
+            # Prepare audio
+            audio = speech.RecognitionAudio(content=audio_data)
+
+            # Configure recognition
+            config = speech.RecognitionConfig(
+                encoding=encoding,
+                language_code=google_language,
+                enable_automatic_punctuation=True,
+                enable_word_time_offsets=False,
+                model="default",  # or "phone_call" for phone audio
+            )
+
+            # Perform transcription
+            response = client.recognize(config=config, audio=audio)
+
+            # Extract text from results
+            if not response.results:
+                logger.warning("google_speech_no_results", language=google_language)
+                return {
+                    "text": "",
+                    "language": language,
+                    "provider": "google",
+                    "confidence": 0.0,
+                }
+
+            # Combine all transcriptions
+            text = " ".join([
+                result.alternatives[0].transcript
+                for result in response.results
+            ])
+
+            # Get confidence (average of all results)
+            confidences = [
+                result.alternatives[0].confidence
+                for result in response.results
+                if hasattr(result.alternatives[0], "confidence")
+            ]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0.9
+
+            logger.info(
+                "google_speech_success",
+                language=google_language,
+                text_length=len(text),
+                confidence=avg_confidence,
             )
 
             return {
-                "text": "[Google Speech-to-Text transcription would appear here]",
+                "text": text,
                 "language": language,
                 "provider": "google",
-                "note": "This is a placeholder implementation",
+                "confidence": avg_confidence,
+                "model": "default",
             }
 
+        except ImportError:
+            logger.error("google_speech_import_error")
+            raise ValueError(
+                "google-cloud-speech not installed. Install with: pip install google-cloud-speech"
+            )
         except Exception as e:
             logger.error("google_speech_transcription_failed", error=str(e))
             raise ValueError(f"Google Speech transcription failed: {str(e)}")
@@ -186,9 +239,9 @@ class ASRService:
         """
         # Common languages for Islamic content
         languages = [
-            {"code": "ar", "name": "Arabic", "native_name": "العربية"},
-            {"code": "en", "name": "English", "native_name": "English"},
             {"code": "fa", "name": "Persian", "native_name": "فارسی"},
+            {"code": "en", "name": "English", "native_name": "English"},
+            {"code": "ar", "name": "Arabic", "native_name": "العربية"},
             {"code": "ur", "name": "Urdu", "native_name": "اردو"},
             {"code": "tr", "name": "Turkish", "native_name": "Türkçe"},
             {"code": "id", "name": "Indonesian", "native_name": "Bahasa Indonesia"},
@@ -292,3 +345,64 @@ class ASRService:
         except Exception as e:
             logger.error("whisper_translation_failed", error=str(e))
             raise ValueError(f"Whisper translation failed: {str(e)}")
+
+    # ========================================================================
+    # Health Check
+    # ========================================================================
+
+    def health_check(self) -> dict:
+        """
+        Check ASR service health and configuration.
+
+        Returns:
+            Health status with provider information
+        """
+        try:
+            # Check provider-specific dependencies
+            if self.provider == "whisper":
+                if not self.openai_client:
+                    return {
+                        "healthy": False,
+                        "provider": "whisper",
+                        "error": "OpenAI API key not configured",
+                    }
+                return {
+                    "healthy": True,
+                    "provider": "whisper",
+                    "model": "whisper-1",
+                }
+
+            elif self.provider == "google":
+                try:
+                    from google.cloud import speech  # noqa: F401
+
+                    return {
+                        "healthy": True,
+                        "provider": "google",
+                        "credentials": "configured" if self.google_credentials else "not_configured",
+                    }
+                except ImportError:
+                    return {
+                        "healthy": False,
+                        "provider": "google",
+                        "error": "google-cloud-speech not installed",
+                    }
+
+            else:
+                return {
+                    "healthy": False,
+                    "provider": self.provider,
+                    "error": f"Unknown provider: {self.provider}",
+                }
+
+        except Exception as e:
+            logger.error("asr_health_check_failed", error=str(e))
+            return {
+                "healthy": False,
+                "provider": self.provider,
+                "error": str(e),
+            }
+
+
+# Global ASR service instance
+asr_service = ASRService()

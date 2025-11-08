@@ -32,9 +32,9 @@ router = APIRouter()
     - Google Speech-to-Text - Enterprise-grade (placeholder)
 
     **Supported Languages:**
-    - Arabic (ar) - Default
+    - Persian/Farsi (fa) - Default
     - English (en)
-    - Persian/Farsi (fa)
+    - Arabic (ar)
     - Urdu (ur)
     - Turkish (tr)
     - Indonesian (id)
@@ -55,7 +55,7 @@ router = APIRouter()
 )
 async def transcribe_audio(
     file: UploadFile = File(..., description="Audio file to transcribe"),
-    language: str = Form(default="ar", description="Language code"),
+    language: str = Form(default="fa", description="Language code"),
     model: str = Form(default=None, description="Specific model (optional)"),
 ) -> TranscribeAudioResponse:
     """
@@ -226,9 +226,9 @@ async def translate_audio(
     Get list of languages supported for speech-to-text.
 
     Languages are prioritized for Islamic content:
-    - Arabic (ar) - Primary language
+    - Persian/Farsi (fa) - Primary language (Iran, Afghanistan)
     - English (en) - International
-    - Persian/Farsi (fa) - Iran, Afghanistan
+    - Arabic (ar) - Middle East, North Africa
     - Urdu (ur) - Pakistan, India
     - Turkish (tr) - Turkey
     - Indonesian (id) - Indonesia

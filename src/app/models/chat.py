@@ -19,10 +19,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.mixins import EnvironmentPromotionMixin, TimestampMixin
 
 
-class Conversation(Base):
-    """User conversations/chat sessions."""
+class Conversation(Base, EnvironmentPromotionMixin, TimestampMixin):
+    """
+    User conversations/chat sessions.
+
+    Environment-aware for testing:
+    - Test conversations created in dev/stage environments
+    - Real conversations in prod
+    - Can promote test conversation patterns for documentation
+    """
 
     __tablename__ = "conversations"
 
@@ -48,13 +56,8 @@ class Conversation(Base):
     message_count: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens_used: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    # NOTE: Timestamps (created_at, updated_at) provided by TimestampMixin
+
     last_message_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -76,8 +79,15 @@ class Conversation(Base):
         return f"<Conversation(id={self.id}, mode={self.mode})>"
 
 
-class Message(Base):
-    """Chat messages in conversations."""
+class Message(Base, EnvironmentPromotionMixin, TimestampMixin):
+    """
+    Chat messages in conversations.
+
+    Environment-aware for cost tracking:
+    - Messages in dev/stage for testing and cost validation
+    - Production messages in prod
+    - Can analyze test message patterns for improvements
+    """
 
     __tablename__ = "messages"
 
@@ -113,6 +123,25 @@ class Message(Base):
     total_tokens_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     estimated_cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True)
 
+    # Prompt caching tokens (OpenRouter)
+    cached_tokens_read: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cached_tokens_write: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cache_discount_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True)
+    cache_breakpoint_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Reasoning tokens (for models like o1-preview, DeepSeek-R1)
+    reasoning_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    audio_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Upstream cost (for BYOK tracking)
+    upstream_inference_cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True)
+
+    # Model routing metadata
+    routing_strategy: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    fallback_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    models_attempted: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)  # List of models tried
+    final_model_used: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
     # Response quality metadata
     response_quality_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
     has_citations: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -122,14 +151,21 @@ class Message(Base):
     llm_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     processing_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # Langfuse tracing
+    langfuse_trace_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    langfuse_observation_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # Structured output schema
+    response_schema: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    structured_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    schema_validation_passed: Mapped[bool] = mapped_column(Boolean, default=True)
+
     # Message status
     is_edited: Mapped[bool] = mapped_column(Boolean, default=False)
     generation_stopped_by_user: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    # NOTE: Timestamps (created_at, updated_at) provided by TimestampMixin
+
     edited_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -194,6 +230,11 @@ class MessageFeedback(Base):
     # Context
     was_helpful: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
+    # Langfuse scoring integration
+    langfuse_trace_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)  # Numeric score
+    score_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Name in Langfuse
+
     # Timestamp
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -209,3 +250,42 @@ class MessageFeedback(Base):
 
     def __repr__(self) -> str:
         return f"<MessageFeedback(message_id={self.message_id}, type={self.feedback_type})>"
+
+
+class MessageAttachment(Base):
+    """Attachments for messages (images, PDFs, audio)."""
+
+    __tablename__ = "message_attachments"
+
+    # Primary Key
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
+
+    # Attachment details
+    attachment_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # image, pdf, audio
+    file_url: Mapped[str] = mapped_column(String(1000), nullable=False)  # URL or base64
+    file_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    # Processing details
+    processing_cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True)
+    attachment_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint(
+            "attachment_type IN ('image', 'pdf', 'audio')",
+            name="check_attachment_type",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MessageAttachment(message_id={self.message_id}, type={self.attachment_type})>"

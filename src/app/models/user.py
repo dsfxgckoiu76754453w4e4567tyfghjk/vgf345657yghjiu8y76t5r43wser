@@ -19,10 +19,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.mixins import EnvironmentPromotionMixin, TimestampMixin
 
 
-class User(Base):
-    """Main users table for authentication and profile management."""
+class User(Base, EnvironmentPromotionMixin, TimestampMixin):
+    """
+    Main users table for authentication and profile management.
+
+    Environment-aware for testing:
+    - Test users can be created in dev/stage for testing
+    - Real users exist in prod
+    - Supports promotion of approved test scenarios
+    """
 
     __tablename__ = "users"
 
@@ -55,13 +63,8 @@ class User(Base):
         String(20), default="user"
     )  # user, admin, superadmin
 
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    # NOTE: Timestamps (created_at, updated_at) provided by TimestampMixin
+
     last_login_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

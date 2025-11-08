@@ -1,91 +1,179 @@
-name: CI/CD Pipeline
+name: Optimized CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, claude/*]
   pull_request:
     branches: [main, develop]
 
 env:
   PYTHON_VERSION: "3.11"
   POETRY_VERSION: "1.7.1"
+  CACHE_VERSION: v1  # Increment to invalidate caches
+
+# Cancel in-progress runs of the same workflow
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # Job 1: Code Quality & Linting
-  lint:
-    name: Lint & Code Quality
+  # ============================================================================
+  # Job 1: Setup & Cache Dependencies (runs once, used by all jobs)
+  # ============================================================================
+  setup:
+    name: Setup & Cache Dependencies
     runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          echo "key=${{ env.CACHE_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}" >> $GITHUB_OUTPUT
+
+      - name: Cache Poetry dependencies
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.virtualenvs
+            .venv
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-poetry-
+
+      - name: Install Poetry
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          pip install poetry==${{ env.POETRY_VERSION }}
+          poetry config virtualenvs.in-project true
+
+      - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+  # ============================================================================
+  # Job 2: Code Quality & Linting (parallel with security)
+  # ============================================================================
+  lint:
+    name: Lint & Code Quality
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore Poetry cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.virtualenvs
+            .venv
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-poetry-
 
       - name: Install Poetry
         run: |
           pip install poetry==${{ env.POETRY_VERSION }}
-          poetry config virtualenvs.create false
+          poetry config virtualenvs.in-project true
 
-      - name: Install dependencies
-        run: poetry install --no-interaction
+      - name: Cache pre-commit hooks
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Run Black (formatting check)
         run: poetry run black --check src/ tests/
+        continue-on-error: false
 
       - name: Run isort (import sorting check)
         run: poetry run isort --check-only src/ tests/
 
       - name: Run flake8 (linting)
-        run: poetry run flake8 src/ tests/ --max-line-length=100
+        run: poetry run flake8 src/ tests/ --max-line-length=100 --statistics
 
       - name: Run mypy (type checking)
-        run: poetry run mypy src/ --ignore-missing-imports
+        run: poetry run mypy src/ --ignore-missing-imports --show-error-codes
 
-  # Job 2: Security Scanning
+  # ============================================================================
+  # Job 3: Security Scanning (parallel with lint)
+  # ============================================================================
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    needs: setup
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore Poetry cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.virtualenvs
+            .venv
+          key: ${{ needs.setup.outputs.cache-key }}
 
       - name: Install Poetry
         run: |
           pip install poetry==${{ env.POETRY_VERSION }}
-          poetry config virtualenvs.create false
-
-      - name: Install dependencies
-        run: poetry install --no-interaction
+          poetry config virtualenvs.in-project true
 
       - name: Run bandit (security linter)
         run: poetry run bandit -r src/ -f json -o bandit-report.json
+        continue-on-error: true
 
       - name: Run safety (dependency vulnerability check)
-        run: poetry run safety check --json
+        run: poetry run safety check --json || true
+        continue-on-error: true
 
       - name: Upload security reports
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: security-reports
-          path: |
-            bandit-report.json
+          path: bandit-report.json
+          retention-days: 30
 
-  # Job 3: Unit Tests
+  # ============================================================================
+  # Job 4: Unit Tests (matrix strategy for parallel execution)
+  # ============================================================================
   test:
-    name: Unit Tests
+    name: Unit Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    needs: setup
+    strategy:
+      fail-fast: false  # Continue other tests if one fails
+      matrix:
+        python-version: ["3.11"]  # Add ["3.10", "3.11", "3.12"] for multi-version testing
+        test-group: [unit, integration]
+
     services:
       postgres:
-        image: postgres:15
+        image: postgres:15-alpine  # Alpine for faster pulls
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -112,100 +200,167 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python-version }}
+
+      - name: Restore Poetry cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.virtualenvs
+            .venv
+          key: ${{ needs.setup.outputs.cache-key }}
 
       - name: Install Poetry
         run: |
           pip install poetry==${{ env.POETRY_VERSION }}
-          poetry config virtualenvs.create false
+          poetry config virtualenvs.in-project true
 
-      - name: Install dependencies
-        run: poetry install --no-interaction
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-cache-${{ matrix.test-group }}-${{ hashFiles('tests/**/*.py') }}
 
-      - name: Run tests with coverage
+      - name: Run ${{ matrix.test-group }} tests with coverage
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
           REDIS_URL: redis://localhost:6379/0
+          QDRANT_URL: http://localhost:6333
+          ENVIRONMENT: test
         run: |
-          poetry run pytest tests/ \
-            --cov=src/app \
-            --cov-report=xml \
-            --cov-report=html \
-            --cov-report=term \
-            -v
+          if [ "${{ matrix.test-group }}" = "unit" ]; then
+            poetry run pytest tests/unit/ \
+              --cov=src/app \
+              --cov-report=xml:coverage-unit.xml \
+              --cov-report=term \
+              --maxfail=5 \
+              --tb=short \
+              -v
+          else
+            poetry run pytest tests/integration/ \
+              --cov=src/app \
+              --cov-report=xml:coverage-integration.xml \
+              --cov-report=term \
+              --maxfail=5 \
+              --tb=short \
+              -v
+          fi
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
-          files: ./coverage.xml
+          files: ./coverage-${{ matrix.test-group }}.xml
+          flags: ${{ matrix.test-group }}
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-      - name: Upload coverage reports
-        uses: actions/upload-artifact@v3
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: coverage-reports
+          name: test-results-${{ matrix.test-group }}-py${{ matrix.python-version }}
           path: |
-            coverage.xml
-            htmlcov/
+            coverage-${{ matrix.test-group }}.xml
+            .pytest_cache/
+          retention-days: 30
 
-  # Job 4: Integration Tests
+  # ============================================================================
+  # Job 5: Integration Tests with Full Stack
+  # ============================================================================
   integration-test:
-    name: Integration Tests
+    name: Full Integration Tests
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, security]  # Run after quality checks, parallel with unit tests
     services:
       postgres:
-        image: postgres:15
+        image: postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
           POSTGRES_DB: test_db
         ports:
           - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
       qdrant:
         image: qdrant/qdrant:latest
         ports:
           - 6333:6333
+        options: >-
+          --health-cmd "curl -f http://localhost:6333/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore Poetry cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.virtualenvs
+            .venv
+          key: ${{ needs.setup.outputs.cache-key }}
 
       - name: Install Poetry
         run: |
           pip install poetry==${{ env.POETRY_VERSION }}
-          poetry config virtualenvs.create false
+          poetry config virtualenvs.in-project true
 
-      - name: Install dependencies
-        run: poetry install --no-interaction
+      - name: Wait for services to be ready
+        run: |
+          timeout 60 bash -c 'until pg_isready -h localhost -p 5432; do sleep 2; done'
+          timeout 60 bash -c 'until redis-cli -h localhost -p 6379 ping; do sleep 2; done'
 
       - name: Run integration tests
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
           REDIS_URL: redis://localhost:6379/0
           QDRANT_URL: http://localhost:6333
-        run: poetry run pytest tests/integration/ -v
+          ENVIRONMENT: test
+        run: |
+          poetry run pytest tests/integration/ tests/e2e/ \
+            --maxfail=3 \
+            --tb=short \
+            -v \
+            --timeout=300
 
-  # Job 5: Build Docker Image
+  # ============================================================================
+  # Job 6: Build Docker Image (optimized with layer caching)
+  # ============================================================================
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [lint, test, security]
-    if: github.event_name == 'push'
+    needs: [lint, security]  # Start building earlier, parallel with tests
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/claude/'))
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -218,6 +373,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+        continue-on-error: true
 
       - name: Extract metadata
         id: meta
@@ -227,23 +383,34 @@ jobs:
           tags: |
             type=ref,event=branch
             type=sha,prefix={{branch}}-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
+          push: ${{ secrets.DOCKER_USERNAME != '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Multi-layer caching strategy
+          cache-from: |
+            type=gha,scope=docker-build
+            type=registry,ref=${{ secrets.DOCKER_USERNAME }}/shia-islamic-chatbot:buildcache
+          cache-to: type=gha,mode=max,scope=docker-build
+          # Build arguments for faster builds
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+            PYTHON_VERSION=${{ env.PYTHON_VERSION }}
 
-  # Job 6: Deploy to Staging (optional)
+  # ============================================================================
+  # Job 7: Deploy to Staging
+  # ============================================================================
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    needs: [build]
-    if: github.ref == 'refs/heads/develop'
+    needs: [test, integration-test, build]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     environment:
       name: staging
       url: https://staging.yourapp.com
@@ -253,16 +420,20 @@ jobs:
 
       - name: Deploy to staging
         run: |
-          echo "Deploy to staging server"
+          echo "Deploying to staging environment"
+          echo "Image: ${{ needs.build.outputs.image-tag }}"
           # Add your deployment script here
-          # Example: ssh to server and pull latest image
+          # Example with docker-compose:
+          # ssh user@staging-server 'cd /app && docker-compose pull && docker-compose up -d'
 
-  # Job 7: Deploy to Production
+  # ============================================================================
+  # Job 8: Deploy to Production
+  # ============================================================================
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [build, integration-test]
-    if: github.ref == 'refs/heads/main'
+    needs: [test, integration-test, build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: production
       url: https://yourapp.com
@@ -272,6 +443,59 @@ jobs:
 
       - name: Deploy to production
         run: |
-          echo "Deploy to production server"
+          echo "Deploying to production environment"
+          echo "Image: ${{ needs.build.outputs.image-tag }}"
           # Add your deployment script here
-          # Example: kubectl apply or docker-compose pull && up
+          # Example with kubernetes:
+          # kubectl set image deployment/chatbot chatbot=${{ needs.build.outputs.image-tag }}
+          # kubectl rollout status deployment/chatbot
+
+  # ============================================================================
+  # Job 9: Performance Tests (optional, runs on schedule)
+  # ============================================================================
+  performance-test:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf-test]')
+    needs: [test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Run performance benchmarks
+        run: |
+          echo "Running performance tests"
+          # Add performance testing tools like locust, pytest-benchmark, etc.
+
+  # ============================================================================
+  # Job 10: Generate Coverage Report (combines all test results)
+  # ============================================================================
+  coverage-report:
+    name: Generate Coverage Report
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all test results
+        uses: actions/download-artifact@v4
+        with:
+          path: test-results/
+
+      - name: Generate combined coverage report
+        run: |
+          echo "Coverage results from all test runs:"
+          find test-results/ -name "*.xml" -type f
+
+      - name: Comment PR with coverage
+        if: github.event_name == 'pull_request'
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}

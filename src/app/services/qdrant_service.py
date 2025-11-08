@@ -21,7 +21,15 @@ logger = get_logger(__name__)
 
 
 class QdrantService:
-    """Service for interacting with Qdrant vector database."""
+    """
+    Service for interacting with Qdrant vector database.
+
+    Environment-aware:
+    - Collections automatically prefixed with environment
+    - islamic_knowledge → islamic_knowledge_dev (in dev)
+    - islamic_knowledge → islamic_knowledge_prod (in prod)
+    - Supports vector copying for promotions
+    """
 
     def __init__(self):
         """Initialize Qdrant client."""
@@ -29,7 +37,8 @@ class QdrantService:
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key,
         )
-        self.collection_name = settings.qdrant_collection_name
+        # Use environment-specific collection name
+        self.collection_name = settings.get_collection_name(settings.qdrant_collection_name)
 
     async def ensure_collection_exists(
         self,
@@ -256,6 +265,138 @@ class QdrantService:
                 error=str(e),
             )
             raise
+
+    async def get_points_by_ids(
+        self,
+        point_ids: list[UUID],
+        collection_name: Optional[str] = None,
+    ) -> list[models.Record]:
+        """
+        Get specific points by their IDs.
+
+        Args:
+            point_ids: List of point IDs to retrieve
+            collection_name: Name of the collection
+
+        Returns:
+            List of point records
+        """
+        collection_name = collection_name or self.collection_name
+
+        try:
+            results = await self.client.retrieve(
+                collection_name=collection_name,
+                ids=[str(point_id) for point_id in point_ids],
+                with_vectors=True,
+                with_payload=True,
+            )
+
+            logger.info(
+                "qdrant_points_retrieved",
+                collection_name=collection_name,
+                count=len(results),
+            )
+
+            return results
+
+        except Exception as e:
+            logger.error(
+                "qdrant_points_retrieve_failed",
+                collection_name=collection_name,
+                error=str(e),
+            )
+            raise
+
+    async def copy_points_to_collection(
+        self,
+        point_ids: list[UUID],
+        source_collection: str,
+        target_collection: str,
+    ) -> int:
+        """
+        Copy specific points from source to target collection.
+
+        Used for promotion between environments.
+
+        Args:
+            point_ids: List of point IDs to copy
+            source_collection: Source collection name
+            target_collection: Target collection name
+
+        Returns:
+            Number of points copied
+        """
+        try:
+            # Get points from source
+            points = await self.client.retrieve(
+                collection_name=source_collection,
+                ids=[str(point_id) for point_id in point_ids],
+                with_vectors=True,
+                with_payload=True,
+            )
+
+            if not points:
+                logger.warning(
+                    "no_points_to_copy",
+                    source_collection=source_collection,
+                    target_collection=target_collection,
+                    point_ids=len(point_ids),
+                )
+                return 0
+
+            # Ensure target collection exists
+            await self.ensure_collection_exists(collection_name=target_collection)
+
+            # Convert to PointStruct for upsert
+            points_to_insert = [
+                PointStruct(
+                    id=point.id,
+                    vector=point.vector,
+                    payload=point.payload,
+                )
+                for point in points
+            ]
+
+            # Upsert into target collection
+            await self.client.upsert(
+                collection_name=target_collection,
+                points=points_to_insert,
+            )
+
+            logger.info(
+                "qdrant_points_copied",
+                source_collection=source_collection,
+                target_collection=target_collection,
+                count=len(points_to_insert),
+            )
+
+            return len(points_to_insert)
+
+        except Exception as e:
+            logger.error(
+                "qdrant_points_copy_failed",
+                source_collection=source_collection,
+                target_collection=target_collection,
+                error=str(e),
+            )
+            raise
+
+    def get_env_collection_name(
+        self,
+        base_collection: str,
+        environment: str,
+    ) -> str:
+        """
+        Get environment-specific collection name.
+
+        Args:
+            base_collection: Base collection name
+            environment: Target environment (dev, stage, prod)
+
+        Returns:
+            Environment-specific collection name
+        """
+        return f"{base_collection}_{environment}"
 
     async def close(self) -> None:
         """Close Qdrant client connection."""

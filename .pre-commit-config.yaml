@@ -1,0 +1,349 @@
+# Pre-commit Configuration
+# See https://pre-commit.com for more information
+
+# Global settings
+default_language_version:
+  python: python3.11
+
+default_stages: [commit]
+fail_fast: false  # Run all hooks even if one fails
+
+repos:
+  # ============================================================================
+  # Standard Pre-commit Hooks (file checks, trailing whitespace, etc.)
+  # ============================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # File checks
+      - id: check-added-large-files
+        args: ['--maxkb=1000']  # Max file size 1MB
+        exclude: ^(tests/fixtures/|docs/images/)
+
+      - id: check-case-conflict  # Check for files with case-insensitive names
+      - id: check-merge-conflict  # Check for merge conflict markers
+      - id: check-symlinks  # Check for broken symlinks
+      - id: destroyed-symlinks  # Check for accidentally committed symlinks
+
+      # Code quality checks
+      - id: check-ast  # Check Python AST (syntax errors)
+      - id: check-builtin-literals  # Require literal syntax when possible
+      - id: check-docstring-first  # Check docstring is first in file
+      - id: debug-statements  # Check for debugger imports and breakpoints
+      - id: detect-private-key  # Detect private keys
+
+      # JSON/YAML/TOML checks
+      - id: check-json  # Validate JSON files
+      - id: check-yaml  # Validate YAML files
+        args: ['--allow-multiple-documents']
+      - id: check-toml  # Validate TOML files
+      - id: pretty-format-json  # Format JSON files
+        args: ['--autofix', '--indent=2', '--no-sort-keys']
+
+      # Git checks
+      - id: check-vcs-permalinks  # Ensure links to VCS are permalinks
+      - id: forbid-new-submodules  # Prevent new git submodules
+      - id: no-commit-to-branch  # Prevent commits to protected branches
+        args: ['--branch', 'main', '--branch', 'master', '--branch', 'production']
+
+      # General file cleanup
+      - id: end-of-file-fixer  # Ensure files end with newline
+      - id: trailing-whitespace  # Remove trailing whitespace
+        args: ['--markdown-linebreak-ext=md']
+      - id: mixed-line-ending  # Fix mixed line endings
+        args: ['--fix=lf']
+
+      # Python-specific
+      - id: name-tests-test  # Ensure test files are named correctly
+        args: ['--pytest-test-first']
+        files: ^tests/.*\.py$
+      - id: requirements-txt-fixer  # Sort requirements.txt
+
+  # ============================================================================
+  # Python Code Formatting (Black)
+  # ============================================================================
+  - repo: https://github.com/psf/black
+    rev: 24.1.1
+    hooks:
+      - id: black
+        name: Format Python code (Black)
+        language_version: python3.11
+        args:
+          - --line-length=100
+          - --target-version=py311
+        files: ^(src/|tests/).*\.py$
+
+  # ============================================================================
+  # Import Sorting (isort)
+  # ============================================================================
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: Sort Python imports (isort)
+        args:
+          - --profile=black
+          - --line-length=100
+          - --multi-line=3
+          - --trailing-comma
+          - --force-grid-wrap=0
+          - --use-parentheses
+        files: ^(src/|tests/).*\.py$
+
+  # ============================================================================
+  # Linting (Flake8)
+  # ============================================================================
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        name: Lint Python code (Flake8)
+        args:
+          - --max-line-length=100
+          - --extend-ignore=E203,W503,E501
+          - --max-complexity=15
+          - --statistics
+          - --count
+        additional_dependencies:
+          - flake8-bugbear>=23.12.2  # Find likely bugs
+          - flake8-comprehensions>=3.14.0  # Better list/dict comprehensions
+          - flake8-simplify>=0.21.0  # Simplify code suggestions
+          - flake8-docstrings>=1.7.0  # Docstring style checking
+          - pep8-naming>=0.13.3  # PEP8 naming conventions
+        files: ^(src/|tests/).*\.py$
+
+  # ============================================================================
+  # Security Scanning (Bandit)
+  # ============================================================================
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.6
+    hooks:
+      - id: bandit
+        name: Security scan (Bandit)
+        args:
+          - -c
+          - pyproject.toml
+          - --recursive
+          - --quiet
+          - --format=custom
+        additional_dependencies: ['bandit[toml]']
+        files: ^src/.*\.py$
+
+  # ============================================================================
+  # Type Checking (MyPy)
+  # ============================================================================
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        name: Type checking (MyPy)
+        args:
+          - --ignore-missing-imports
+          - --show-error-codes
+          - --no-implicit-optional
+          - --warn-redundant-casts
+          - --warn-unused-ignores
+        additional_dependencies:
+          - types-requests
+          - types-redis
+          - types-PyYAML
+        files: ^src/.*\.py$
+
+  # ============================================================================
+  # Secrets Detection (detect-secrets)
+  # ============================================================================
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        name: Detect secrets
+        args:
+          - --baseline
+          - .secrets.baseline
+        exclude: |
+          (?x)^(
+            poetry.lock|
+            package-lock.json|
+            .*\.ipynb$|
+            tests/fixtures/.*
+          )$
+
+  # ============================================================================
+  # Dependency Security (Safety)
+  # ============================================================================
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
+    rev: v1.3.3
+    hooks:
+      - id: python-safety-dependencies-check
+        name: Check dependency vulnerabilities (Safety)
+        args: ['--ignore=51457,51499']  # Add CVEs to ignore if needed
+        files: pyproject.toml
+
+  # ============================================================================
+  # YAML Linting (yamllint)
+  # ============================================================================
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.33.0
+    hooks:
+      - id: yamllint
+        name: Lint YAML files
+        args:
+          - --format=parsable
+          - --strict
+        files: \.(yaml|yml)$
+        exclude: ^(.github/workflows/|docker-compose)
+
+  # ============================================================================
+  # Markdown Linting (markdownlint)
+  # ============================================================================
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.38.0
+    hooks:
+      - id: markdownlint
+        name: Lint Markdown files
+        args:
+          - --fix
+          - --disable=MD013,MD033,MD041  # Line length, HTML, first line heading
+        files: \.md$
+
+  # ============================================================================
+  # Dockerfile Linting (hadolint)
+  # ============================================================================
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint
+        name: Lint Dockerfiles
+        args:
+          - --ignore=DL3008  # Pin apt-get versions
+          - --ignore=DL3013  # Pin pip versions (handled by poetry)
+        files: Dockerfile.*
+
+  # ============================================================================
+  # Shell Script Linting (shellcheck)
+  # ============================================================================
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+        name: Lint shell scripts
+        args:
+          - --severity=warning
+        files: \.(sh|bash)$
+
+  # ============================================================================
+  # Python Docstring Coverage (interrogate)
+  # ============================================================================
+  - repo: https://github.com/econchick/interrogate
+    rev: 1.5.0
+    hooks:
+      - id: interrogate
+        name: Check docstring coverage
+        args:
+          - --quiet
+          - --fail-under=80
+          - --ignore-init-method
+          - --ignore-init-module
+          - --ignore-magic
+          - --ignore-nested-functions
+          - --exclude=tests
+        files: ^src/.*\.py$
+
+  # ============================================================================
+  # Python Complexity Check (radon)
+  # ============================================================================
+  - repo: https://github.com/rubik/radon
+    rev: v6.0.1
+    hooks:
+      - id: radon-cc
+        name: Check code complexity
+        args:
+          - --min=B  # Warn on complexity B or higher
+          - --show-complexity
+          - --total-average
+        files: ^src/.*\.py$
+
+  # ============================================================================
+  # Commit Message Linting (commitizen)
+  # ============================================================================
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.13.0
+    hooks:
+      - id: commitizen
+        name: Check commit message format
+        stages: [commit-msg]
+
+  # ============================================================================
+  # Poetry Check
+  # ============================================================================
+  - repo: https://github.com/python-poetry/poetry
+    rev: 1.7.0
+    hooks:
+      - id: poetry-check
+        name: Validate Poetry configuration
+        files: pyproject.toml
+
+      - id: poetry-lock
+        name: Check Poetry lock file
+        files: pyproject.toml
+
+  # ============================================================================
+  # Local Hooks (custom scripts)
+  # ============================================================================
+  - repo: local
+    hooks:
+      # Check for print statements in production code
+      - id: check-print-statements
+        name: Check for print statements
+        entry: python -c "import sys; sys.exit(0 if all('print(' not in open(f).read() for f in sys.argv[1:]) else 1)"
+        language: system
+        files: ^src/app/(?!__pycache__|.*test).*\.py$
+        exclude: ^src/app/(core/logging|utils/debug)\.py$
+
+      # Check for TODO/FIXME comments
+      - id: check-todos
+        name: Check for TODO/FIXME
+        entry: python -c "import sys; import re; pattern = re.compile(r'(TODO|FIXME|XXX|HACK|BUG):', re.IGNORECASE); sys.exit(0 if not any(pattern.search(open(f, encoding='utf-8').read()) for f in sys.argv[1:]) else 1)"
+        language: system
+        files: ^src/.*\.py$
+        exclude: ^tests/
+        verbose: true
+
+      # Check for proper exception handling
+      - id: check-bare-except
+        name: Check for bare except clauses
+        entry: python -c "import sys; sys.exit(0 if all('except:' not in open(f).read() for f in sys.argv[1:]) else 1)"
+        language: system
+        files: ^src/.*\.py$
+
+      # Check test file naming convention
+      - id: check-test-naming
+        name: Check test file naming
+        entry: python -c "import sys; sys.exit(0 if all(f.startswith('test_') or f == '__init__.py' for f in [file.split('/')[-1] for file in sys.argv[1:]]) else 1)"
+        language: system
+        files: ^tests/.*\.py$
+
+      # Run pytest on changed test files (optional, can be slow)
+      # - id: pytest-check
+      #   name: Run tests on changed files
+      #   entry: poetry run pytest
+      #   language: system
+      #   files: ^tests/.*\.py$
+      #   pass_filenames: true
+      #   stages: [push]
+
+# ============================================================================
+# CI Integration
+# ============================================================================
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

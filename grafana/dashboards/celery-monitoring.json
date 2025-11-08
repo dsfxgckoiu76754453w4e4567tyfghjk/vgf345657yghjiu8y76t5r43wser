@@ -1,0 +1,226 @@
+{
+  "dashboard": {
+    "title": "Celery Task Queue Monitoring",
+    "tags": ["celery", "queue", "tasks", "shia-chatbot"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Task Submission Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_submitted_total{environment=\"$environment\"}[5m])",
+            "legendFormat": "{{task_name}} ({{queue}})",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Tasks/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Task Success Rate",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_completed_total{environment=\"$environment\"}[5m]) / rate(celery_tasks_submitted_total{environment=\"$environment\"}[5m]) * 100",
+            "legendFormat": "{{task_name}} Success Rate",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "label": "Success %", "max": 100},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Task Duration (p95)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(celery_task_duration_seconds_bucket{environment=\"$environment\"}[5m]))",
+            "legendFormat": "{{task_name}} ({{queue}})",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Task Failures",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_failed_total{environment=\"$environment\"}[5m])",
+            "legendFormat": "{{task_name}} ({{queue}})",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Failures/sec"},
+          {"format": "short"}
+        ],
+        "alert": {
+          "name": "High Task Failure Rate",
+          "conditions": [
+            {
+              "evaluator": {"type": "gt", "params": [0.1]},
+              "query": {"params": ["A", "5m", "now"]}
+            }
+          ]
+        }
+      },
+      {
+        "id": 5,
+        "title": "Queue Length",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "celery_queue_length{environment=\"$environment\"}",
+            "legendFormat": "{{queue}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Tasks in Queue"},
+          {"format": "short"}
+        ],
+        "alert": {
+          "name": "Queue Backlog",
+          "conditions": [
+            {
+              "evaluator": {"type": "gt", "params": [100]},
+              "query": {"params": ["A", "5m", "now"]}
+            }
+          ]
+        }
+      },
+      {
+        "id": 6,
+        "title": "Active Workers",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 16, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(celery_active_workers{environment=\"$environment\"})",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "textMode": "value_and_name",
+          "colorMode": "value",
+          "graphMode": "area"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 1, "color": "yellow"},
+                {"value": 3, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Task Retries",
+        "type": "graph",
+        "gridPos": {"x": 18, "y": 16, "w": 6, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_retried_total{environment=\"$environment\"}[5m])",
+            "legendFormat": "{{task_name}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Retries/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Tasks by Priority Queue",
+        "type": "piechart",
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (queue) (celery_tasks_submitted_total{environment=\"$environment\"})",
+            "legendFormat": "{{queue}}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "legend": {"displayMode": "table", "placement": "right"},
+          "pieType": "donut"
+        }
+      },
+      {
+        "id": 9,
+        "title": "Top 10 Slowest Tasks (Avg Duration)",
+        "type": "table",
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "topk(10, avg by (task_name) (rate(celery_task_duration_seconds_sum{environment=\"$environment\"}[5m]) / rate(celery_task_duration_seconds_count{environment=\"$environment\"}[5m])))",
+            "format": "table",
+            "refId": "A"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "renameByName": {
+                "task_name": "Task Name",
+                "Value": "Avg Duration (s)"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "environment",
+          "type": "query",
+          "query": "label_values(celery_tasks_submitted_total, environment)",
+          "current": {"text": "prod", "value": "prod"},
+          "options": [],
+          "refresh": 1
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "Prometheus",
+          "expr": "changes(app_info{environment=\"$environment\"}[1m]) > 0",
+          "tagKeys": "version",
+          "textFormat": "Deployment: {{version}}"
+        }
+      ]
+    }
+  }
+}

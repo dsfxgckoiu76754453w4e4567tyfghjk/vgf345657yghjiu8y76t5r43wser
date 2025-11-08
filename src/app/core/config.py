@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     redis_cache_db: int = Field(default=1)
     redis_queue_db: int = Field(default=2)
 
+    # Celery
+    celery_broker_url: str | None = Field(default=None)  # Auto-configured from redis_url
+    celery_result_backend: str | None = Field(default=None)  # Auto-configured from database_url
+    celery_task_always_eager: bool = Field(default=False)  # Sync execution for testing
+    celery_task_eager_propagates: bool = Field(default=True)  # Propagate exceptions in eager mode
+
     # Qdrant
     qdrant_url: str = Field(default="http://localhost:6333")
     qdrant_api_key: str | None = Field(default=None)
@@ -71,8 +77,10 @@ class Settings(BaseSettings):
 
     # OpenRouter (Unified LLM API - Recommended)
     openrouter_api_key: str | None = Field(default=None)
+    openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
     openrouter_app_name: str = Field(default="WisQu Islamic Chatbot")
     openrouter_app_url: str = Field(default="https://wisqu.com")
+    openrouter_model: str = Field(default="anthropic/claude-3.5-sonnet")
 
     # LLM Configuration (Used by LangGraph)
     llm_provider: Literal["openrouter", "openai", "anthropic"] = Field(default="openrouter")
@@ -87,9 +95,50 @@ class Settings(BaseSettings):
 
     # Web Search
     web_search_enabled: bool = Field(default=True)
-    web_search_provider: Literal["tavily", "serper"] = Field(default="tavily")
+    web_search_provider: Literal["tavily", "serper", "openrouter"] = Field(default="tavily")
     tavily_api_key: str | None = Field(default=None)
     serper_api_key: str | None = Field(default=None)
+    # OpenRouter Search Configuration (when WEB_SEARCH_PROVIDER=openrouter)
+    web_search_model: str = Field(default="perplexity/sonar")
+    web_search_temperature: float = Field(default=0.3)
+    web_search_max_tokens: int = Field(default=4096)
+    # Search context size for native search (low, medium, high)
+    web_search_context_size: Literal["low", "medium", "high"] = Field(default="medium")
+    # Web search engine (native, exa, or None for automatic)
+    web_search_engine: Literal["native", "exa"] | None = Field(default=None)
+
+    # Prompt Caching
+    prompt_caching_enabled: bool = Field(default=True)
+    cache_control_strategy: Literal["auto", "manual"] = Field(default="auto")
+    cache_min_tokens: int = Field(default=1024)  # Minimum tokens for OpenAI caching
+
+    # Model Routing & Fallbacks
+    model_routing_enabled: bool = Field(default=True)
+    default_fallback_models: list[str] = Field(
+        default_factory=lambda: []
+    )  # Fallback models for routing
+    routing_strategy: Literal["auto", "price", "latency", "uptime"] = Field(default="auto")
+    enable_auto_router: bool = Field(default=False)  # Use openrouter/auto
+
+    # Usage Accounting
+    usage_tracking_enabled: bool = Field(default=True)
+    track_user_ids: bool = Field(default=True)  # Send user parameter to OpenRouter
+
+    # Image Generation
+    image_generation_enabled: bool = Field(default=False)
+    image_generation_models: list[str] = Field(
+        default_factory=lambda: ["google/gemini-2.5-flash-image-preview"]
+    )
+    image_storage_type: Literal["database", "s3", "local"] = Field(default="database")
+    image_max_size_mb: int = Field(default=10)
+
+    # Structured Outputs
+    structured_outputs_enabled: bool = Field(default=True)
+
+    # Multimodal Processing
+    pdf_processing_enabled: bool = Field(default=True)
+    audio_processing_enabled: bool = Field(default=True)
+    pdf_skip_parsing: bool = Field(default=False)  # For cost control
 
     # Reranker
     reranker_provider: Literal["cohere", "vertex"] = Field(default="cohere")
@@ -161,6 +210,82 @@ class Settings(BaseSettings):
     super_admin_email: str = Field(default="admin@wisqu.com")
     super_admin_password: str = Field(default="ChangeMe123!")
 
+    # MinIO Object Storage
+    minio_enabled: bool = Field(default=True)
+    minio_endpoint: str = Field(default="localhost:9000")
+    minio_access_key: str = Field(default="minioadmin")
+    minio_secret_key: str = Field(default="minioadmin")
+    minio_secure: bool = Field(default=False)  # True for HTTPS
+    minio_region: str = Field(default="us-east-1")
+    minio_public_url: str = Field(default="http://localhost:9000")  # For public URLs
+
+    # MinIO Bucket Names
+    minio_bucket_images: str = Field(default="wisqu-images")  # AI-generated images (public)
+    minio_bucket_documents: str = Field(default="wisqu-documents")  # RAG docs, user PDFs
+    minio_bucket_audio_resources: str = Field(
+        default="wisqu-audio-resources"
+    )  # Quran, Mafatih, Duas (public)
+    minio_bucket_audio_user: str = Field(
+        default="wisqu-audio-user"
+    )  # User voice messages (private)
+    minio_bucket_audio_transcripts: str = Field(
+        default="wisqu-audio-transcripts"
+    )  # ASR processed audio
+    minio_bucket_uploads: str = Field(
+        default="wisqu-uploads"
+    )  # General uploads, ticket attachments
+    minio_bucket_temp: str = Field(default="wisqu-temp")  # Temporary processing
+    minio_bucket_backups: str = Field(default="wisqu-backups")  # System backups
+
+    # Storage Limits & Quotas
+    storage_max_file_size_mb: int = Field(default=50)  # Max file size in MB
+    storage_max_image_size_mb: int = Field(default=10)
+    storage_max_audio_size_mb: int = Field(default=25)
+    storage_max_document_size_mb: int = Field(default=20)
+
+    # User Storage Quotas (in MB)
+    storage_quota_free: int = Field(default=100)  # 100MB for free tier
+    storage_quota_premium: int = Field(default=5120)  # 5GB for premium
+    storage_quota_unlimited: int = Field(default=51200)  # 50GB for unlimited
+
+    # ASR (Automatic Speech Recognition) Settings
+    asr_enabled: bool = Field(default=True)
+    asr_provider: Literal["google", "openai", "whisper"] = Field(default="google")
+    asr_language: str = Field(default="fa-IR")  # Persian/Farsi
+    asr_alternative_languages: str = Field(
+        default="ar-SA,en-US"
+    )  # Arabic, English for fallback
+    asr_max_audio_duration_seconds: int = Field(default=600)  # 10 minutes
+    google_asr_credentials_path: str | None = Field(default=None)  # Path to JSON credentials
+
+    # Environment-Specific Settings
+    environment_data_retention_days: int = Field(
+        default=30,
+        description="Data retention in days (auto-configured by environment)"
+    )
+    environment_allow_test_accounts: bool = Field(
+        default=True,
+        description="Allow test account creation (auto-configured by environment)"
+    )
+    environment_auto_cleanup_enabled: bool = Field(
+        default=True,
+        description="Enable automatic data cleanup (auto-configured by environment)"
+    )
+    environment_cleanup_schedule: str = Field(
+        default="0 2 * * *",  # 2 AM daily
+        description="Cron schedule for cleanup job"
+    )
+
+    # Promotion Settings
+    promotion_enabled: bool = Field(default=True)
+    promotion_require_approval: bool = Field(default=True)
+    promotion_allowed_paths: str = Field(
+        default="dev->stage,stage->prod,dev->prod",
+        description="Comma-separated allowed promotion paths"
+    )
+    promotion_max_items_per_batch: int = Field(default=100)
+    promotion_rollback_window_hours: int = Field(default=24)
+
     @field_validator("cors_origins")
     @classmethod
     def parse_cors_origins(cls, v: str) -> list[str]:
@@ -222,6 +347,84 @@ class Settings(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def configure_celery_urls(self):
+        """Auto-configure Celery broker and result backend from Redis and Database URLs."""
+        # Auto-configure Celery broker from Redis if not explicitly set
+        if self.celery_broker_url is None:
+            redis_db = self.get_redis_db("queue")  # Use queue DB for Celery
+            # Parse base Redis URL and add queue DB
+            if "//" in self.redis_url:
+                base_url = self.redis_url.rsplit("/", 1)[0]
+            else:
+                base_url = self.redis_url
+            self.celery_broker_url = f"{base_url}/{redis_db}"
+
+        # Auto-configure Celery result backend from PostgreSQL if not explicitly set
+        if self.celery_result_backend is None:
+            # Use synchronous psycopg2 driver for Celery result backend
+            sync_url = self.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+            self.celery_result_backend = f"db+{sync_url}"
+
+        return self
+
+    @model_validator(mode="after")
+    def configure_environment_settings(self):
+        """Auto-configure environment-specific settings based on environment."""
+        # Configure data retention based on environment
+        retention_map = {
+            "dev": 30,  # 30 days for dev
+            "test": 30,  # 30 days for test
+            "stage": 90,  # 90 days for stage
+            "prod": 365,  # 1 year for prod (but manual delete still needed)
+        }
+        if not hasattr(self, '_retention_overridden'):
+            self.environment_data_retention_days = retention_map.get(
+                self.environment,
+                self.environment_data_retention_days
+            )
+
+        # Configure test account creation
+        if self.environment == "prod":
+            # In prod, test accounts allowed but audited heavily
+            self.environment_allow_test_accounts = True
+        else:
+            self.environment_allow_test_accounts = True
+
+        # Configure auto-cleanup
+        cleanup_map = {
+            "dev": True,  # Aggressive cleanup in dev
+            "test": True,  # Aggressive cleanup in test
+            "stage": True,  # Moderate cleanup in stage
+            "prod": False,  # No auto-cleanup in prod (manual only)
+        }
+        if not hasattr(self, '_cleanup_overridden'):
+            self.environment_auto_cleanup_enabled = cleanup_map.get(
+                self.environment,
+                self.environment_auto_cleanup_enabled
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_web_search_config(self):
+        """Validate web search configuration."""
+        if self.web_search_enabled and self.web_search_provider == "openrouter":
+            # Warn if using a potentially deprecated model name pattern
+            model = self.web_search_model.lower()
+            deprecated_patterns = ["-preview", "-beta", "-alpha"]
+
+            if any(pattern in model for pattern in deprecated_patterns):
+                import warnings
+                warnings.warn(
+                    f"Web search model '{self.web_search_model}' appears to be a preview/beta version. "
+                    f"These models may be deprecated. Consider using stable models like "
+                    f"'perplexity/sonar-deep-research' or check https://openrouter.ai/models for current models.",
+                    UserWarning
+                )
+
+        return self
+
     def get_database_url(self, database_name: str | None = None) -> str:
         """
         Build database URL from individual parameters.
@@ -270,6 +473,74 @@ class Settings(BaseSettings):
     def show_docs(self) -> bool:
         """Whether to show API documentation endpoints."""
         return self.debug or self.environment != "prod"
+
+    # ========================================================================
+    # Environment Resource Naming Helpers
+    # ========================================================================
+
+    def get_env_prefixed_name(self, base_name: str) -> str:
+        """
+        Get environment-prefixed resource name.
+
+        Examples:
+            >>> settings.get_env_prefixed_name("wisqu-images")
+            "dev-wisqu-images"  # In dev environment
+            "prod-wisqu-images"  # In prod environment
+        """
+        return f"{self.environment}-{base_name}"
+
+    def get_collection_name(self, base_collection: str) -> str:
+        """
+        Get environment-specific Qdrant collection name.
+
+        Examples:
+            >>> settings.get_collection_name("islamic_knowledge")
+            "islamic_knowledge_dev"  # In dev environment
+        """
+        return f"{base_collection}_{self.environment}"
+
+    def get_bucket_name(self, base_bucket: str) -> str:
+        """
+        Get environment-prefixed MinIO bucket name.
+
+        Examples:
+            >>> settings.get_bucket_name("wisqu-images")
+            "dev-wisqu-images"  # In dev environment
+        """
+        return self.get_env_prefixed_name(base_bucket)
+
+    def get_redis_db(self, purpose: str) -> int:
+        """
+        Get environment-specific Redis DB number.
+
+        Uses different DB ranges for each environment:
+        - dev: 0-2
+        - test: 3-5
+        - stage: 6-8
+        - prod: 9-11
+
+        Examples:
+            >>> settings.get_redis_db("cache")
+            0  # In dev environment
+            6  # In stage environment
+        """
+        env_offsets = {
+            "dev": 0,
+            "test": 3,
+            "stage": 6,
+            "prod": 9,
+        }
+
+        purpose_offsets = {
+            "default": 0,
+            "cache": 1,
+            "queue": 2,
+        }
+
+        base_offset = env_offsets.get(self.environment, 0)
+        purpose_offset = purpose_offsets.get(purpose, 0)
+
+        return base_offset + purpose_offset
 
 
 # Global settings instance
