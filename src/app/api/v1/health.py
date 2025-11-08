@@ -2,6 +2,7 @@
 
 import time
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
@@ -249,7 +250,7 @@ async def liveness_check() -> dict[str, str]:
 @router.get("/metrics", status_code=status.HTTP_200_OK)
 async def metrics(
     db: AsyncSession = Depends(get_db),
-) -> dict[str, any]:
+) -> dict[str, Any]:
     """
     Basic metrics endpoint.
 

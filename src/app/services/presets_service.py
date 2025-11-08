@@ -38,7 +38,7 @@ class PresetsService:
         temperature: float | None = None,
         top_p: float | None = None,
         max_tokens: int | None = None,
-        model_config: dict[str, Any] | None = None,
+        extra_model_config: dict[str, Any] | None = None,
         provider_preferences: dict[str, Any] | None = None,
         is_public: bool = False,
     ) -> ModelPreset:

@@ -64,6 +64,116 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: shia-chatbot-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # MinIO API
+      - "9001:9001"  # MinIO Console (Web UI)
+    volumes:
+      - minio_data:/data:rw
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    networks:
+      - chatbot-network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Celery Worker (uses local source code via volume mount)
+  celery-worker:
+    image: python:3.12-slim
+    container_name: shia-chatbot-celery-worker
+    working_dir: /app
+    command: >
+      bash -c "
+        apt-get update && apt-get install -y --no-install-recommends curl gcc g++ build-essential &&
+        pip install --no-cache-dir poetry &&
+        poetry config virtualenvs.create false &&
+        poetry install --no-interaction --no-ansi --no-root &&
+        celery -A app.core.celery_app worker --loglevel=info --concurrency=4
+      "
+    volumes:
+      - ./src:/app/src:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+      - ./poetry.lock:/app/poetry.lock:ro
+      - celery_worker_data:/root/.cache:rw  # Cache for pip/poetry
+    environment:
+      # Database
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=postgres
+      - DATABASE_NAME=shia_chatbot
+      - DATABASE_DRIVER=postgresql+asyncpg
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_CACHE_DB=1
+      - REDIS_QUEUE_DB=2
+      - CELERY_BROKER_URL=redis://redis:6379/2
+      - CELERY_RESULT_BACKEND=redis://redis:6379/3
+      # Qdrant
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=
+      # MinIO
+      - MINIO_ENABLED=true
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_SECURE=false
+      # LLM Settings (copy from .env)
+      - OPENROUTER_API_KEY=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
+      - OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+      - LLM_PROVIDER=openrouter
+      - LLM_MODEL=anthropic/claude-3.5-sonnet
+      - LLM_TEMPERATURE=0.7
+      - LLM_MAX_TOKENS=4096
+      # Langfuse
+      - LANGFUSE_ENABLED=true
+      - LANGFUSE_PUBLIC_KEY=pk-lf-385179cd-f9dc-4257-a4c3-da4e2030101c
+      - LANGFUSE_SECRET_KEY=sk-lf-15100f06-c4d7-4a35-ab0f-3cb9a8b99369
+      - LANGFUSE_HOST=https://cloud.langfuse.com
+      # Environment
+      - ENVIRONMENT=dev
+      - PYTHONPATH=/app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+
+  # Flower (Celery Monitoring Dashboard)
+  flower:
+    image: mher/flower:latest
+    container_name: shia-chatbot-flower
+    command: celery --broker=redis://redis:6379/2 flower --port=5555 --basic_auth=admin:changeme_in_production
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/2
+      - CELERY_RESULT_BACKEND=redis://redis:6379/3
+      - FLOWER_PORT=5555
+    depends_on:
+      - redis
+      - celery-worker
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+
   # Langfuse (Observability - Optional)
   # RECOMMENDED: Use Langfuse Cloud instead of self-hosting for production
   # Sign up at: https://cloud.langfuse.com (Free tier available)
@@ -85,7 +195,11 @@ services:
   #   networks:
   #     - chatbot-network
 
-  # FastAPI Application (uncomment after implementation)
+  # FastAPI Application (KEEP COMMENTED - Run locally with: poetry run uvicorn src.app.main:app --reload)
+  # This allows quick code changes without rebuilding Docker images
+  #
+  # To run locally: poetry run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload
+  #
   # app:
   #   build:
   #     context: .
@@ -114,3 +228,5 @@ volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  minio_data:
+  celery_worker_data:

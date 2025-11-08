@@ -238,7 +238,7 @@ class EnvironmentAccessLog(Base):
     )
 
     # Additional context
-    metadata: Mapped[Optional[dict]] = mapped_column(
+    access_metadata: Mapped[Optional[dict]] = mapped_column(
         JSONB,
         nullable=True,
         comment="Additional access context"

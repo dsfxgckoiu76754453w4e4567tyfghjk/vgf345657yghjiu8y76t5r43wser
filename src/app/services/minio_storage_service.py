@@ -7,7 +7,7 @@ from uuid import UUID
 
 from minio import Minio
 from minio.error import S3Error
-from minio.lifecycleconfig import LifecycleConfig, Rule, Expiration, Filter
+from minio.lifecycleconfig import LifecycleConfig, Rule, Expiration
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -57,7 +57,8 @@ class MinIOStorageService:
 
         except Exception as e:
             logger.error("minio_initialization_failed", error=str(e))
-            raise
+            logger.warning("minio_service_disabled_due_to_error", error=str(e))
+            self.client = None
 
     def _get_env_bucket_name(self, base_bucket: str) -> str:
         """
@@ -146,7 +147,6 @@ class MinIOStorageService:
                 [
                     Rule(
                         rule_id=f"delete-after-{days}-days",
-                        rule_filter=Filter(),
                         expiration=Expiration(days=days),
                         rule_status="Enabled",
                     )

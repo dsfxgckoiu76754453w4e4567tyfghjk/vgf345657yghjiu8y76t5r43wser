@@ -327,6 +327,34 @@ class Settings(BaseSettings):
             return int(v)
         return v
 
+    @field_validator("default_fallback_models", mode="before")
+    @classmethod
+    def parse_default_fallback_models(cls, v):
+        """Parse comma-separated fallback models or return empty list."""
+        if v is None or v == "" or (isinstance(v, str) and v.strip() == ""):
+            return []
+        if isinstance(v, str):
+            return [model.strip() for model in v.split(",") if model.strip()]
+        return v
+
+    @field_validator("image_generation_models", mode="before")
+    @classmethod
+    def parse_image_generation_models(cls, v):
+        """Parse comma-separated image generation models or use default."""
+        if v is None or v == "" or (isinstance(v, str) and v.strip() == ""):
+            return ["google/gemini-2.5-flash-image-preview"]
+        if isinstance(v, str):
+            return [model.strip() for model in v.split(",") if model.strip()]
+        return v
+
+    @field_validator("web_search_engine", mode="before")
+    @classmethod
+    def parse_web_search_engine(cls, v):
+        """Convert empty string to None for web_search_engine."""
+        if v == "" or (isinstance(v, str) and v.strip() == ""):
+            return None
+        return v
+
     @model_validator(mode="after")
     def validate_production_secrets(self):
         """Validate that production environments have secure secrets."""
