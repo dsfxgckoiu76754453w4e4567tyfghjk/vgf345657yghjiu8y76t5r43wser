@@ -84,18 +84,46 @@ celery-purge: ## Purge all Celery tasks from queue (⚠️  Use with caution!)
 # Docker Operations
 # ============================================================================
 
-docker-up: ## Start all Docker services (PostgreSQL, Redis, Qdrant)
-	$(DOCKER_COMPOSE) up -d
-	@echo "✅ Docker services started"
+docker-up: ## Start development infrastructure only (PostgreSQL, Redis, Qdrant)
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml up -d
+	@echo "✅ Development infrastructure started"
 	@echo "   - PostgreSQL: localhost:5433"
 	@echo "   - Redis: localhost:6379"
 	@echo "   - Qdrant: localhost:6333"
+	@echo ""
+	@echo "💡 Run 'make dev' to start the app natively (recommended for development)"
+	@echo "💡 Or run 'make docker-up-full' to start all 10 services including monitoring"
+
+docker-up-full: ## Start full production stack (all 10 services with monitoring)
+	$(DOCKER_COMPOSE) up -d
+	@echo "✅ Full production stack started (10 services)"
+	@echo ""
+	@echo "Services available:"
+	@echo "   - App (FastAPI): http://localhost:8000 (Swagger: /docs)"
+	@echo "   - PostgreSQL: localhost:5433"
+	@echo "   - Redis: localhost:6379"
+	@echo "   - Qdrant: http://localhost:6333/dashboard"
+	@echo "   - Flower (Celery): http://localhost:5555"
+	@echo "   - Prometheus: http://localhost:9090"
+	@echo "   - Grafana: http://localhost:3000 (admin/admin)"
+	@echo "   - Nginx: http://localhost (port 80/443)"
 
 docker-down: ## Stop all Docker services
 	$(DOCKER_COMPOSE) down
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml down
 	@echo "✅ Docker services stopped"
 
-docker-restart: docker-down docker-up ## Restart all Docker services
+docker-down-full: ## Stop full production stack
+	$(DOCKER_COMPOSE) down
+	@echo "✅ Full stack stopped"
+
+docker-down-dev: ## Stop development infrastructure only
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml down
+	@echo "✅ Development infrastructure stopped"
+
+docker-restart: docker-down docker-up ## Restart development infrastructure
+
+docker-restart-full: docker-down-full docker-up-full ## Restart full production stack
 
 docker-build: ## Build Docker image for the application
 	docker build -t $(DOCKER_IMAGE) .
@@ -104,17 +132,32 @@ docker-build: ## Build Docker image for the application
 docker-logs: ## Show logs from all Docker services
 	$(DOCKER_COMPOSE) logs -f
 
-docker-logs-app: ## Show logs from application service only
+docker-logs-app: ## Show logs from application service (full stack only)
 	$(DOCKER_COMPOSE) logs -f app
 
 docker-logs-postgres: ## Show logs from PostgreSQL service
-	$(DOCKER_COMPOSE) logs -f postgres
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml logs -f postgres 2>/dev/null || $(DOCKER_COMPOSE) logs -f postgres
 
 docker-logs-redis: ## Show logs from Redis service
-	$(DOCKER_COMPOSE) logs -f redis
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml logs -f redis 2>/dev/null || $(DOCKER_COMPOSE) logs -f redis
 
 docker-logs-qdrant: ## Show logs from Qdrant service
-	$(DOCKER_COMPOSE) logs -f qdrant
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml logs -f qdrant 2>/dev/null || $(DOCKER_COMPOSE) logs -f qdrant
+
+docker-logs-celery: ## Show logs from Celery worker (full stack only)
+	$(DOCKER_COMPOSE) logs -f celery-worker
+
+docker-logs-flower: ## Show logs from Flower (full stack only)
+	$(DOCKER_COMPOSE) logs -f flower
+
+docker-logs-prometheus: ## Show logs from Prometheus (full stack only)
+	$(DOCKER_COMPOSE) logs -f prometheus
+
+docker-logs-grafana: ## Show logs from Grafana (full stack only)
+	$(DOCKER_COMPOSE) logs -f grafana
+
+docker-logs-nginx: ## Show logs from Nginx (full stack only)
+	$(DOCKER_COMPOSE) logs -f nginx
 
 docker-ps: ## Check status and health of all Docker services
 	$(DOCKER_COMPOSE) ps
@@ -122,18 +165,36 @@ docker-ps: ## Check status and health of all Docker services
 	@echo "Volume Status:"
 	@docker volume ls | grep $(APP_NAME) || docker volume ls | grep shia-chatbot || echo "No volumes found"
 
-docker-health: ## Check health status of all services
+docker-health: ## Check health status of all running services
 	@echo "🏥 Checking service health..."
-	@$(DOCKER_COMPOSE) ps | grep -E "healthy|unhealthy" || echo "Health checks running..."
 	@echo ""
-	@echo "Testing PostgreSQL connection:"
-	@docker exec shia-chatbot-postgres pg_isready -U postgres || echo "⚠️  PostgreSQL not ready"
+	@$(DOCKER_COMPOSE) ps
 	@echo ""
-	@echo "Testing Redis connection:"
-	@docker exec shia-chatbot-redis redis-cli ping || echo "⚠️  Redis not ready"
+	@echo "=== Core Infrastructure ==="
+	@echo -n "PostgreSQL: "
+	@docker exec shia-chatbot-postgres pg_isready -U postgres 2>/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Redis: "
+	@docker exec shia-chatbot-redis redis-cli ping 2>/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Qdrant: "
+	@curl -sf http://localhost:6333/healthz >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo ""
-	@echo "Testing Qdrant connection:"
-	@curl -s http://localhost:6333/healthz || echo "⚠️  Qdrant not ready"
+	@echo "=== Application Services (if running full stack) ==="
+	@echo -n "FastAPI App: "
+	@curl -sf http://localhost:8000/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Celery Worker: "
+	@docker exec shia-chatbot-celery-worker celery -A src.app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Flower: "
+	@curl -sf http://localhost:5555/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo ""
+	@echo "=== Monitoring Stack (if running full stack) ==="
+	@echo -n "Prometheus: "
+	@curl -sf http://localhost:9090/-/healthy >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Grafana: "
+	@curl -sf http://localhost:3000/api/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Nginx: "
+	@curl -sf http://localhost/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running (or not configured)"
+	@echo ""
+	@echo "💡 Use 'make docker-up' for dev infrastructure or 'make docker-up-full' for all services"
 
 docker-clean: ## Remove all Docker containers and images (preserves volumes)
 	$(DOCKER_COMPOSE) down --rmi all
