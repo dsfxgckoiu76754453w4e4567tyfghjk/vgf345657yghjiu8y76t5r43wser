@@ -78,31 +78,13 @@ make dev
 
 ## 📖 Documentation
 
-### For Users & Developers
+| Document | Description | Audience |
+|----------|-------------|----------|
+| [**DEVELOPER_GUIDE.md**](DEVELOPER_GUIDE.md) | Complete guide: setup, development, testing, contributing | Developers |
+| [**OPERATIONS_GUIDE.md**](OPERATIONS_GUIDE.md) | Complete guide: deployment, configuration, monitoring, incidents | DevOps/SRE |
+| [**API Documentation**](http://localhost:8000/docs) | Interactive Swagger UI (when app is running) | API Users |
 
-| Document | Description |
-|----------|-------------|
-| [**QUICK_START.md**](QUICK_START.md) | Get started in 3 steps |
-| [**LOCAL_DEVELOPMENT_GUIDE.md**](LOCAL_DEVELOPMENT_GUIDE.md) | Complete development workflow |
-| [**MAKEFILE_QUICK_REFERENCE.md**](MAKEFILE_QUICK_REFERENCE.md) | 100+ commands reference |
-| [**API Documentation**](http://localhost:8000/docs) | Interactive Swagger UI (when running) |
-
-### For DevOps & Operations
-
-| Document | Description |
-|----------|-------------|
-| [**OPERATIONS.md**](OPERATIONS.md) | Deployment, promotion, configuration |
-| [**CONTRIBUTING.md**](CONTRIBUTING.md) | Contributing guidelines |
-| [**PRE_COMMIT_SETUP_GUIDE.md**](PRE_COMMIT_SETUP_GUIDE.md) | Code quality automation |
-| [**CI_CD_OPTIMIZATION_SUMMARY.md**](CI_CD_OPTIMIZATION_SUMMARY.md) | CI/CD pipeline details |
-
-### Architecture & Design
-
-| Document | Description |
-|----------|-------------|
-| [**ARCHITECTURE.md**](ARCHITECTURE.md) | System architecture overview |
-| [**MULTI_ENVIRONMENT_ARCHITECTURE.md**](MULTI_ENVIRONMENT_ARCHITECTURE.md) | Environment isolation design |
-| [**DATABASE_CONFIGURATION.md**](DATABASE_CONFIGURATION.md) | Database schema and configuration |
+**📚 Everything you need in 2 comprehensive guides + interactive API docs!**
 
 ---
 
