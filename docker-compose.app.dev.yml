@@ -39,28 +39,63 @@ services:
     env_file:
       - .env
     environment:
-      # Critical: Set environment to DEV
+      # ======================================================================
+      # ENVIRONMENT ISOLATION - DEV
+      # ======================================================================
       - ENVIRONMENT=dev
 
-      # Database connection (connects to base service)
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-shia_chatbot}
+      # ======================================================================
+      # PostgreSQL Configuration (Clean Multi-Parameter)
+      # ======================================================================
+      # TRUE ISOLATION: Separate database for DEV environment
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=shia_chatbot_dev
+      - DATABASE_USER=${POSTGRES_USER:-postgres}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - DATABASE_DRIVER=postgresql+asyncpg
+      - DATABASE_POOL_SIZE=10
+      - DATABASE_MAX_OVERFLOW=20
 
-      # Redis connection
-      - REDIS_URL=redis://redis:6379/0
+      # ======================================================================
+      # Redis Configuration (Clean Multi-Parameter)
+      # ======================================================================
+      # TRUE ISOLATION: Separate database number for DEV (db 0)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=
+      - REDIS_MAX_CONNECTIONS=50
 
-      # Qdrant connection
-      - QDRANT_URL=http://qdrant:6333
+      # ======================================================================
+      # Qdrant Configuration (Clean Multi-Parameter)
+      # ======================================================================
+      # TRUE ISOLATION: Separate collection prefix for DEV (dev_*)
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_GRPC_PORT=6334
+      - QDRANT_COLLECTION_PREFIX=dev_
+      - QDRANT_API_KEY=
 
-      # MinIO connection (optional)
-      - MINIO_URL=http://minio:9000
+      # ======================================================================
+      # MinIO Configuration (Clean Multi-Parameter)
+      # ======================================================================
+      # TRUE ISOLATION: Separate bucket prefix for DEV (dev-*)
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_BUCKET_PREFIX=dev-
+      - MINIO_SECURE=false
+      - MINIO_REGION=us-east-1
 
-      # Logging
+      # ======================================================================
+      # Application Configuration
+      # ======================================================================
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-
-      # Debug mode (enabled in DEV)
       - DEBUG=true
+      - CORS_ORIGINS=*
+      - ALLOWED_HOSTS=*
     networks:
       - chatbot-network
     depends_on:
@@ -101,13 +136,35 @@ services:
     env_file:
       - .env
     environment:
+      # Environment
       - ENVIRONMENT=dev
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-shia_chatbot}
-      - REDIS_URL=redis://redis:6379/0
-      - QDRANT_URL=http://qdrant:6333
-      - MINIO_URL=http://minio:9000
+
+      # PostgreSQL (DEV database)
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=shia_chatbot_dev
+      - DATABASE_USER=${POSTGRES_USER:-postgres}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - DATABASE_DRIVER=postgresql+asyncpg
+
+      # Redis (DEV db 0)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+
+      # Qdrant (DEV collections: dev_*)
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_COLLECTION_PREFIX=dev_
+
+      # MinIO (DEV buckets: dev-*)
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_BUCKET_PREFIX=dev-
+
+      # Logging
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
     networks:
       - chatbot-network
@@ -150,8 +207,14 @@ services:
       - .env
     environment:
       - ENVIRONMENT=dev
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-shia_chatbot}
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=shia_chatbot_dev
+      - DATABASE_USER=${POSTGRES_USER:-postgres}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
     volumes:
       - celery_beat_schedule:/app/celerybeat-schedule
@@ -190,7 +253,9 @@ services:
       - .env
     environment:
       - ENVIRONMENT=dev
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
     networks:
       - chatbot-network

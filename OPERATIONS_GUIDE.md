@@ -139,6 +139,144 @@ PROD:
 
 **Safe for VPS:** All environments can run simultaneously without conflicts
 
+### TRUE Data Isolation Strategy
+
+**Critical:** All environments use **1 shared service instance** but have **completely separate data**.
+
+This ensures:
+- ✅ EnvironmentPromotionMixin provides TRUE isolation
+- ✅ Zero risk of DEV tests corrupting PROD data
+- ✅ Resource efficient (1 service instance, not 3)
+- ✅ Perfect for VPS deployment
+
+#### PostgreSQL Isolation (3 Separate Databases)
+
+```
+Single PostgreSQL Instance:
+  ├── shia_chatbot_dev    (DEV environment)
+  ├── shia_chatbot_stage  (STAGE environment)
+  └── shia_chatbot_prod   (PROD environment)
+```
+
+**Configuration:**
+```yaml
+# DEV
+DATABASE_HOST=postgres
+DATABASE_NAME=shia_chatbot_dev
+
+# STAGE
+DATABASE_HOST=postgres
+DATABASE_NAME=shia_chatbot_stage
+
+# PROD
+DATABASE_HOST=postgres
+DATABASE_NAME=shia_chatbot_prod
+```
+
+#### Redis Isolation (3 Separate Database Numbers)
+
+```
+Single Redis Instance:
+  ├── DB 0  (DEV environment)
+  ├── DB 1  (STAGE environment)
+  └── DB 2  (PROD environment)
+```
+
+**Configuration:**
+```yaml
+# DEV
+REDIS_HOST=redis
+REDIS_DB=0
+
+# STAGE
+REDIS_HOST=redis
+REDIS_DB=1
+
+# PROD
+REDIS_HOST=redis
+REDIS_DB=2
+```
+
+#### Qdrant Isolation (3 Separate Collection Prefixes)
+
+```
+Single Qdrant Instance:
+  ├── dev_*    (DEV collections)
+  ├── stage_*  (STAGE collections)
+  └── prod_*   (PROD collections)
+```
+
+**Configuration:**
+```yaml
+# DEV
+QDRANT_HOST=qdrant
+QDRANT_COLLECTION_PREFIX=dev_
+
+# STAGE
+QDRANT_HOST=qdrant
+QDRANT_COLLECTION_PREFIX=stage_
+
+# PROD
+QDRANT_HOST=qdrant
+QDRANT_COLLECTION_PREFIX=prod_
+```
+
+#### MinIO Isolation (3 Separate Bucket Prefixes)
+
+```
+Single MinIO Instance:
+  ├── dev-*    (DEV buckets)
+  ├── stage-*  (STAGE buckets)
+  └── prod-*   (PROD buckets)
+```
+
+**Configuration:**
+```yaml
+# DEV
+MINIO_HOST=minio
+MINIO_BUCKET_PREFIX=dev-
+
+# STAGE
+MINIO_HOST=minio
+MINIO_BUCKET_PREFIX=stage-
+
+# PROD
+MINIO_HOST=minio
+MINIO_BUCKET_PREFIX=prod-
+```
+
+#### Clean Multi-Parameter Configuration
+
+All services use **clean multi-parameter** configuration instead of single URL strings:
+
+**❌ Old (Single URL):**
+```yaml
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/shia_chatbot
+REDIS_URL=redis://redis:6379/0
+```
+
+**✅ New (Clean Multi-Parameter):**
+```yaml
+# PostgreSQL
+DATABASE_HOST=postgres
+DATABASE_PORT=5432
+DATABASE_NAME=shia_chatbot_dev
+DATABASE_USER=postgres
+DATABASE_PASSWORD=postgres
+DATABASE_DRIVER=postgresql+asyncpg
+
+# Redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_DB=0
+```
+
+**Benefits:**
+- Clean, readable configuration
+- Easy to change individual parameters
+- Better for configuration management
+- Follows 12-factor app methodology
+
 ### Service Health Checks
 
 ```bash

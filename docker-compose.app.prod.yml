@@ -44,30 +44,61 @@ services:
     env_file:
       - .env.prod  # Use production-specific env file
     environment:
-      # Critical: Set environment to PRODUCTION
+      # ======================================================================
+      # ENVIRONMENT ISOLATION - PRODUCTION
+      # ======================================================================
       - ENVIRONMENT=prod
 
-      # Database connection
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-shia_chatbot}
+      # ======================================================================
+      # PostgreSQL Configuration (Clean Multi-Parameter)
+      # ======================================================================
+      # TRUE ISOLATION: Separate database for PROD environment
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=shia_chatbot_prod
+      - DATABASE_USER=${POSTGRES_USER:-postgres}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - DATABASE_DRIVER=postgresql+asyncpg
+      - DATABASE_POOL_SIZE=20
+      - DATABASE_MAX_OVERFLOW=40
 
-      # Redis connection
-      - REDIS_URL=redis://redis:6379/0
+      # ======================================================================
+      # Redis Configuration (Clean Multi-Parameter)
+      # ======================================================================
+      # TRUE ISOLATION: Separate database number for PROD (db 2)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=2
+      - REDIS_PASSWORD=
+      - REDIS_MAX_CONNECTIONS=100
 
-      # Qdrant connection
-      - QDRANT_URL=http://qdrant:6333
+      # ======================================================================
+      # Qdrant Configuration (Clean Multi-Parameter)
+      # ======================================================================
+      # TRUE ISOLATION: Separate collection prefix for PROD (prod_*)
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_GRPC_PORT=6334
+      - QDRANT_COLLECTION_PREFIX=prod_
+      - QDRANT_API_KEY=
 
-      # MinIO connection (optional)
-      - MINIO_URL=http://minio:9000
+      # ======================================================================
+      # MinIO Configuration (Clean Multi-Parameter)
+      # ======================================================================
+      # TRUE ISOLATION: Separate bucket prefix for PROD (prod-*)
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_BUCKET_PREFIX=prod-
+      - MINIO_SECURE=true
+      - MINIO_REGION=us-east-1
 
-      # Logging (WARNING in production)
+      # ======================================================================
+      # Application Configuration (Production)
+      # ======================================================================
       - LOG_LEVEL=${LOG_LEVEL:-WARNING}
-
-      # Debug mode DISABLED in production
       - DEBUG=false
-
-      # Production security settings
       - CORS_ORIGINS=${CORS_ORIGINS:-https://yourdomain.com}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-yourdomain.com}
     networks:
@@ -111,12 +142,23 @@ services:
       - .env.prod
     environment:
       - ENVIRONMENT=prod
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-shia_chatbot}
-      - REDIS_URL=redis://redis:6379/0
-      - QDRANT_URL=http://qdrant:6333
-      - MINIO_URL=http://minio:9000
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=shia_chatbot_prod
+      - DATABASE_USER=${POSTGRES_USER:-postgres}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - DATABASE_DRIVER=postgresql+asyncpg
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=2
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_COLLECTION_PREFIX=prod_
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_BUCKET_PREFIX=prod-
       - LOG_LEVEL=${LOG_LEVEL:-WARNING}
     networks:
       - chatbot-network
@@ -159,8 +201,14 @@ services:
       - .env.prod
     environment:
       - ENVIRONMENT=prod
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-shia_chatbot}
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=shia_chatbot_prod
+      - DATABASE_USER=${POSTGRES_USER:-postgres}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=2
       - LOG_LEVEL=${LOG_LEVEL:-WARNING}
     volumes:
       - celery_beat_schedule:/app/celerybeat-schedule
@@ -199,7 +247,9 @@ services:
       - .env.prod
     environment:
       - ENVIRONMENT=prod
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=2
       - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
       - FLOWER_URL_PREFIX=${FLOWER_URL_PREFIX:-/flower}
     networks:
