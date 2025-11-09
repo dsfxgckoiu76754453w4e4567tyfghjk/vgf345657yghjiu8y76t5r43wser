@@ -60,45 +60,84 @@
 
 ## 🐳 Docker Services
 
-### Two Configurations
+### New Optimized Architecture
+
+**Composable Docker Setup** - Zero redundancy, complete isolation between environments
 
 | File | Purpose | Services | When to Use |
 |------|---------|----------|-------------|
-| **docker-compose.dev.yml** | Development | 3 core services | Local development |
-| **docker-compose.yml** | Production | 10 full services | Production deployment |
+| **docker-compose.base.yml** | All infrastructure | PostgreSQL, Redis, Qdrant, MinIO, Prometheus, Grafana, Nginx | Shared by all modes |
+| **docker-compose.app.dev.yml** | DEV environment overlay | App, Celery, Flower (ENVIRONMENT=dev) | Internal team releases |
+| **docker-compose.app.stage.yml** | STAGE environment overlay | App, Celery, Flower (ENVIRONMENT=stage) | Test users environment |
+| **docker-compose.app.prod.yml** | PROD environment overlay | App, Celery, Flower (ENVIRONMENT=prod) | Production deployment |
 
-### Development Stack (docker-compose.dev.yml)
+### Two Modes of Operation
 
-**3 core services:**
+#### Mode 1: Local Development (No Image Build)
 
-```bash
-make docker-up  # or: docker compose -f docker-compose.dev.yml up -d
-```
-
-1. **PostgreSQL** - Port 5433
-2. **Redis** - Port 6379
-3. **Qdrant** - Port 6333
-
-**Use case:** Local development with app running natively
-
-### Production Stack (docker-compose.yml)
-
-**10 full services:**
+**Purpose:** Fast iteration, debugging, hot reload
 
 ```bash
-make docker-up-full  # or: docker compose up -d
+# Start ALL infrastructure services in Docker
+make docker-local
+
+# Then run app natively
+make dev           # FastAPI with hot reload
+make celery-worker # Celery worker natively
 ```
 
-1. **PostgreSQL** - Primary database
-2. **Redis** - Cache + message broker
-3. **Qdrant** - Vector database
-4. **FastAPI App** - Application server
-5. **Celery Worker** - Background tasks
-6. **Celery Beat** - Task scheduler
-7. **Flower** - Celery monitoring
-8. **Prometheus** - Metrics collection
-9. **Grafana** - Metrics visualization
-10. **Nginx** - Reverse proxy
+**What runs in Docker:**
+- PostgreSQL, Redis, Qdrant, MinIO
+- Prometheus, Grafana, Nginx
+- Everything EXCEPT the app
+
+**What runs natively:**
+- FastAPI app (hot reload, easy debugging)
+- Celery worker (optional)
+
+#### Mode 2: Environment Releases (Full Docker)
+
+**Purpose:** Internal testing, staging, production
+
+```bash
+# DEV Environment (ENVIRONMENT=dev)
+make docker-dev    # http://localhost:8000
+
+# STAGE Environment (ENVIRONMENT=stage)
+make docker-stage  # http://localhost:8001
+
+# PROD Environment (ENVIRONMENT=prod)
+make docker-prod   # http://localhost:8002
+```
+
+**What runs in Docker:**
+- Everything: infrastructure + app + workers
+
+### Environment Isolation
+
+Each environment has **complete isolation:**
+
+```
+DEV:
+  - Containers: shia-chatbot-dev-*
+  - App Port: 8000
+  - Flower Port: 5555
+  - ENVIRONMENT=dev
+
+STAGE:
+  - Containers: shia-chatbot-stage-*
+  - App Port: 8001
+  - Flower Port: 5556
+  - ENVIRONMENT=stage
+
+PROD:
+  - Containers: shia-chatbot-prod-*
+  - App Port: 8002
+  - Flower Port: 5557
+  - ENVIRONMENT=prod
+```
+
+**Safe for VPS:** All environments can run simultaneously without conflicts
 
 ### Service Health Checks
 
@@ -120,17 +159,28 @@ make docker-health
 
 ### Port Mapping
 
+**Base Infrastructure Services (Shared):**
+
 | Service | Internal | External | Protocol |
 |---------|----------|----------|----------|
 | PostgreSQL | 5432 | 5433 | TCP |
 | Redis | 6379 | 6379 | TCP |
 | Qdrant HTTP | 6333 | 6333 | HTTP |
 | Qdrant gRPC | 6334 | 6334 | gRPC |
-| FastAPI | 8000 | 8000 | HTTP |
-| Flower | 5555 | 5555 | HTTP |
+| MinIO API | 9000 | 9000 | HTTP |
+| MinIO Console | 9001 | 9001 | HTTP |
 | Prometheus | 9090 | 9090 | HTTP |
 | Grafana | 3000 | 3000 | HTTP |
-| Nginx | 80/443 | 80/443 | HTTP/HTTPS |
+| Nginx | 80/443 | 8100/8443 | HTTP/HTTPS |
+
+**Environment-Specific Services:**
+
+| Service | DEV | STAGE | PROD | Protocol |
+|---------|-----|-------|------|----------|
+| FastAPI App | 8000 | 8001 | 8002 | HTTP |
+| Flower | 5555 | 5556 | 5557 | HTTP |
+
+**Note:** Different ports allow running multiple environments simultaneously
 
 ### Resource Limits
 
