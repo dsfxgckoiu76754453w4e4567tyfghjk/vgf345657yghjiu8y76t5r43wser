@@ -13,6 +13,7 @@ from app.models.document import Document, DocumentChunk, DocumentEmbedding
 from app.services.chonkie_service import chonkie_service
 from app.services.embeddings_service import embeddings_service
 from app.services.qdrant_service import qdrant_service
+from app.services.reranker_service import reranker_service
 
 logger = get_logger(__name__)
 
@@ -238,28 +239,51 @@ class DocumentService:
         score_threshold: float = 0.7,
         document_type: Optional[str] = None,
         language: Optional[str] = None,
+        use_reranker: bool = True,
+        rerank_multiplier: int = 5,
     ) -> list[dict]:
         """
-        Search for similar chunks using vector search.
+        Search for similar chunks using 2-stage retrieval (vector search + reranking).
+
+        2-Stage Retrieval Process:
+        - Stage 1: Vector search retrieves top N candidates (limit * rerank_multiplier)
+        - Stage 2: Reranker refines to top K results (limit) using cross-encoder
 
         Args:
             query: Search query
-            limit: Maximum number of results
-            score_threshold: Minimum similarity score
+            limit: Maximum number of final results
+            score_threshold: Minimum similarity score for vector search
             document_type: Filter by document type
             language: Filter by language
+            use_reranker: Enable 2-stage retrieval with reranking
+            rerank_multiplier: How many candidates to retrieve before reranking (e.g., 5x limit)
 
         Returns:
-            List of similar chunks with metadata
+            List of similar chunks with metadata and rerank scores
+
+        Example:
+            # Get top 10 results with 2-stage retrieval
+            results = await document_service.search_similar_chunks(
+                query="What is prayer in Islam?",
+                limit=10,
+                use_reranker=True,
+                rerank_multiplier=5  # Retrieves 50 candidates, reranks to 10
+            )
         """
         logger.info(
             "semantic_search_started",
             query_length=len(query),
             limit=limit,
+            use_reranker=use_reranker,
+            two_stage_retrieval=use_reranker,
         )
 
-        # Generate query embedding
-        query_embedding = await embeddings_service.embed_text(query)
+        # Stage 1: Vector Search (with query-optimized embeddings)
+        # Retrieve more candidates if reranking is enabled
+        vector_search_limit = limit * rerank_multiplier if use_reranker else limit
+
+        # Generate query embedding (optimized for RETRIEVAL_QUERY)
+        query_embedding = await embeddings_service.embed_text(query, is_query=True)
 
         # Build filters
         filters = {}
@@ -271,7 +295,7 @@ class DocumentService:
         # Search in Qdrant
         results = await qdrant_service.search(
             query_vector=query_embedding,
-            limit=limit,
+            limit=vector_search_limit,
             score_threshold=score_threshold,
             filter_conditions=filters,
         )
@@ -283,15 +307,111 @@ class DocumentService:
                 {
                     "chunk_id": result.payload.get("chunk_id"),
                     "document_id": result.payload.get("document_id"),
-                    "text": result.payload.get("chunk_text"),
-                    "score": result.score,
-                    "index": result.payload.get("chunk_index"),
+                    "chunk_text": result.payload.get("chunk_text"),
+                    "text": result.payload.get("chunk_text"),  # Alias for compatibility
+                    "vector_score": result.score,
+                    "score": result.score,  # Will be updated with rerank_score if reranking
+                    "chunk_index": result.payload.get("chunk_index"),
                 }
             )
 
         logger.info(
-            "semantic_search_completed",
-            results_count=len(formatted_results),
+            "stage1_vector_search_completed",
+            candidates_count=len(formatted_results),
         )
 
-        return formatted_results
+        # Stage 2: Reranking (if enabled)
+        if use_reranker and reranker_service.enabled and len(formatted_results) > limit:
+            logger.info(
+                "stage2_reranking_started",
+                candidates=len(formatted_results),
+                target_limit=limit,
+            )
+
+            reranked_results = await reranker_service.rerank(
+                query=query,
+                documents=formatted_results,
+                top_k=limit,
+                return_documents=True,
+            )
+
+            # Update scores to rerank scores
+            for doc in reranked_results:
+                doc["score"] = doc["rerank_score"]
+
+            logger.info(
+                "stage2_reranking_completed",
+                final_count=len(reranked_results),
+                top_rerank_score=reranked_results[0].get("rerank_score", 0) if reranked_results else 0,
+            )
+
+            return reranked_results
+
+        # If reranker is disabled or not enough results, return vector search results
+        logger.info(
+            "semantic_search_completed",
+            results_count=len(formatted_results[:limit]),
+            reranking_skipped=not use_reranker or not reranker_service.enabled,
+        )
+
+        return formatted_results[:limit]
+
+    async def search_with_reranking_metadata(
+        self,
+        query: str,
+        limit: int = 10,
+        score_threshold: float = 0.7,
+        document_type: Optional[str] = None,
+        language: Optional[str] = None,
+        rerank_multiplier: int = 5,
+    ) -> tuple[list[dict], dict]:
+        """
+        Search with 2-stage retrieval and return detailed metadata.
+
+        Returns:
+            Tuple of (results, metadata) where metadata contains:
+            - vector_search_count: Number of candidates from stage 1
+            - rerank_count: Number of results after stage 2
+            - top_vector_score: Highest vector similarity score
+            - top_rerank_score: Highest reranking score
+            - cost_estimate: Estimated cost in USD
+        """
+        logger.info(
+            "search_with_metadata_started",
+            query=query[:50],
+            limit=limit,
+        )
+
+        # Perform 2-stage retrieval
+        results = await self.search_similar_chunks(
+            query=query,
+            limit=limit,
+            score_threshold=score_threshold,
+            document_type=document_type,
+            language=language,
+            use_reranker=True,
+            rerank_multiplier=rerank_multiplier,
+        )
+
+        # Calculate metadata
+        vector_search_count = limit * rerank_multiplier
+        metadata = {
+            "query_length": len(query),
+            "vector_search_limit": vector_search_count,
+            "final_limit": limit,
+            "results_count": len(results),
+            "top_vector_score": results[0].get("vector_score", 0) if results else 0,
+            "top_rerank_score": results[0].get("rerank_score", 0) if results else 0,
+            "top_final_score": results[0].get("score", 0) if results else 0,
+            "reranking_used": reranker_service.enabled,
+            "embedding_cost": embeddings_service.estimate_cost(len(query)),
+            "rerank_cost": reranker_service.estimate_cost(vector_search_count, 1),
+            "total_cost": (
+                embeddings_service.estimate_cost(len(query))
+                + reranker_service.estimate_cost(vector_search_count, 1)
+            ),
+        }
+
+        logger.info("search_with_metadata_completed", **metadata)
+
+        return results, metadata

@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="gemini-embedding-001")
     embedding_dimension: int = Field(default=3072)
 
+    # Reranker (for 2-stage retrieval)
+    reranker_enabled: bool = Field(default=True)
+    reranker_provider: Literal["cohere"] = Field(default="cohere")
+    reranker_model: str = Field(default="rerank-3.5")
+
     # Web Search
     web_search_enabled: bool = Field(default=True)
     web_search_provider: Literal["tavily", "serper", "openrouter"] = Field(default="tavily")
