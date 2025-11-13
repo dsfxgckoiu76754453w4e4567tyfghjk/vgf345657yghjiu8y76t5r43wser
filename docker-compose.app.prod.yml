@@ -4,6 +4,31 @@ version: '3.8'
 # PRODUCTION ENVIRONMENT - Live Production System
 # ============================================================================
 #
+# ⚠️ ⚠️ ⚠️  CRITICAL WARNING - READ BEFORE DEPLOYMENT  ⚠️ ⚠️ ⚠️
+#
+# THIS VPS HOSTS OTHER PRODUCTION CONTAINERS WITH REAL USERS!
+#
+# Before running ANY production commands:
+# 1. CHECK running containers: docker ps -a
+# 2. CHECK container names to avoid conflicts
+# 3. CHECK port bindings to avoid collisions
+# 4. VERIFY resource limits won't affect other services
+# 5. USE container-specific commands, NOT docker system prune!
+#
+# NEVER run destructive commands:
+# ❌ docker system prune -a (will delete other prod containers!)
+# ❌ docker volume prune (will delete other prod data!)
+# ❌ docker network prune (will affect other services!)
+#
+# ALWAYS use specific container/volume names:
+# ✅ docker stop shia-chatbot-prod-app
+# ✅ docker rm shia-chatbot-prod-app
+# ✅ docker volume rm shia-chatbot-postgres_data
+#
+# ⚠️ ⚠️ ⚠️  BE EXTREMELY CAREFUL - OTHER USERS DEPEND ON THIS VPS!  ⚠️ ⚠️ ⚠️
+#
+# ============================================================================
+#
 # Purpose: Production environment for real users
 # Environment: ENVIRONMENT=prod
 # Container Prefix: shia-chatbot-prod-*

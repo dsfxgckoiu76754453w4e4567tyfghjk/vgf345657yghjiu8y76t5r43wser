@@ -211,7 +211,29 @@ docker-stage: ## Mode 2: Start STAGE environment (ENVIRONMENT=stage)
 	@echo "Environment: ENVIRONMENT=stage"
 	@echo "Container prefix: shia-chatbot-stage-*"
 
-docker-prod: ## Mode 2: Start PROD environment (ENVIRONMENT=prod)
+docker-prod: ## Mode 2: Start PROD environment (⚠️ SHARED VPS - BE CAREFUL!)
+	@echo "⚠️ ⚠️ ⚠️  PRODUCTION DEPLOYMENT WARNING  ⚠️ ⚠️ ⚠️"
+	@echo ""
+	@echo "This VPS hosts OTHER PRODUCTION CONTAINERS with REAL USERS!"
+	@echo ""
+	@echo "Before proceeding, verify:"
+	@echo "1. No container name conflicts: docker ps -a"
+	@echo "2. No port binding conflicts"
+	@echo "3. Sufficient system resources available"
+	@echo ""
+	@read -p "Have you read docker-compose.app.prod.yml header? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "❌ Please read the safety warnings in docker-compose.app.prod.yml first!"; \
+		exit 1; \
+	fi; \
+	read -p "Proceed with PRODUCTION deployment? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "❌ Deployment cancelled"; \
+		exit 1; \
+	fi
+	@echo "🚀 Starting PROD environment..."
 	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.prod.yml up --build -d
 	@echo "✅ PROD environment started (Mode 2)"
 	@echo ""
@@ -375,9 +397,24 @@ docker-clean: ## Remove all Docker containers and images (preserves volumes)
 	@echo "✅ Docker containers and images removed (volumes preserved)"
 
 docker-clean-all: ## Remove all Docker containers, volumes, and images (⚠️  DELETES ALL DATA!)
-	@echo "⚠️  WARNING: This will DELETE ALL DATA in volumes!"
-	@echo "Press Ctrl+C to cancel, or Enter to continue..."
-	@read confirm
+	@echo "⚠️ ⚠️ ⚠️  DANGER: DATA DELETION WARNING  ⚠️ ⚠️ ⚠️"
+	@echo ""
+	@echo "This will DELETE ALL DATA in docker-compose volumes:"
+	@echo "  - PostgreSQL databases (ALL environments)"
+	@echo "  - Redis data"
+	@echo "  - Qdrant vector collections"
+	@echo "  - MinIO object storage"
+	@echo "  - All application images"
+	@echo ""
+	@echo "This command only affects shia-chatbot containers."
+	@echo "It will NOT affect other containers on this VPS."
+	@echo ""
+	@read -p "Are you ABSOLUTELY SURE? Type 'yes' to confirm: " confirm; \
+	if [ "$$confirm" != "yes" ]; then \
+		echo "❌ Cancelled - data preserved"; \
+		exit 1; \
+	fi
+	@echo "🗑️  Cleaning docker-compose environment..."
 	$(DOCKER_COMPOSE) down -v --rmi all
 	@echo "✅ Docker environment completely cleaned"
 
