@@ -279,3 +279,43 @@ volumes:
     name: shia-chatbot-grafana-data
   nginx_logs:
     name: shia-chatbot-nginx-logs
+
+  # ==========================================================================
+  # TEMPORAL - Workflow Orchestration
+  # ==========================================================================
+  
+  # Temporal Server (Auto-setup with PostgreSQL backend)
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: shia-chatbot-temporal
+    ports:
+      - "${TEMPORAL_GRPC_PORT:-7233}:7233"  # gRPC
+      - "${TEMPORAL_WEB_PORT:-8233}:8233"   # Web UI
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - chatbot-network
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "localhost:7233", "workflow", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+

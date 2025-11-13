@@ -66,12 +66,17 @@ class IntentDetector:
     - Query extraction for each intent
     - Support for Persian, English, and Arabic
 
-    Note: Persian keywords need to be added to all intent categories.
+    Fully supports Persian, English, and Arabic keywords for all intent categories.
     """
 
     # ===== IMAGE GENERATION =====
     IMAGE_KEYWORDS = [
-        # TODO: Add Persian keywords (e.g., "تصویر بساز", "عکس بساز", etc.)
+        # Persian
+        "تصویر بساز", "عکس بساز", "تصویر درست کن", "عکس درست کن",
+        "تصویر بکش", "نقاشی بکش", "طراحی کن", "تصویر طراحی کن",
+        "تصویر تولید کن", "عکس تولید کن", "ساخت تصویر",  
+        "می‌خوام عکس", "می‌خواهم تصویر", "نیاز به تصویر",
+        "نشون بده تصویر", "نمایش تصویر", "مصور کن",
         # English - Explicit
         "generate image", "create image", "make image", "draw image",
         "generate picture", "create picture", "make picture", "draw picture",
@@ -95,7 +100,11 @@ class IntentDetector:
 
     # ===== WEB SEARCH =====
     WEB_SEARCH_KEYWORDS = [
-        # TODO: Add Persian keywords (e.g., "جستجو در وب", "جستجو آنلاین", etc.)
+        # Persian
+        "جستجو در وب", "جستجو آنلاین", "جستجو در اینترنت", "گوگل کن",
+        "سرچ کن", "توی نت جستجو کن", "در اینترنت بگرد", "پیدا کن آنلاین",
+        "جستجوی وب", "جستجوی اینترنت", "توی اینترنت چی میگه",
+        "آنلاین چک کن", "توی نت بگرد",
         # English
         "search web", "search online", "search internet", "google",
         "search for", "look up", "find online", "web search",
@@ -115,7 +124,10 @@ class IntentDetector:
 
     # ===== DEEP WEB SEARCH =====
     DEEP_WEB_SEARCH_KEYWORDS = [
-        # TODO: Add Persian keywords (e.g., "جستجوی عمیق", "جستجوی جامع", etc.)
+        # Persian
+        "جستجوی عمیق", "جستجوی جامع", "جستجوی کامل", "جستجوی دقیق",
+        "به طور کامل جستجو کن", "جستجوی فراگیر", "بررسی کامل",
+        "تحقیق کامل", "جستجوی همه جا",
         # English
         "deep search", "thorough search", "comprehensive search",
         "search thoroughly", "extensive search", "detailed search",
@@ -133,7 +145,11 @@ class IntentDetector:
 
     # ===== DOCUMENT SEARCH (RAG) =====
     DOCUMENT_SEARCH_KEYWORDS = [
-        # TODO: Add Persian keywords (e.g., "جستجو در اسناد", "در فایل‌های من", etc.)
+        # Persian
+        "جستجو در اسناد", "جستجو در فایل‌ها", "در اسناد من",
+        "توی فایل‌هام پیدا کن", "در مستندات من", "بگرد توی فایل‌ها",
+        "چک کن فایل‌هام", "در اسناد من بگرد", "طبق اسناد من",
+        "بر اساس فایل‌هام", "فایل‌های من چی میگن",
         # English - Explicit
         "search documents", "search my documents", "search files",
         "find in documents", "look in my files", "check my documents",
@@ -154,7 +170,10 @@ class IntentDetector:
 
     # ===== AUDIO TRANSCRIPTION =====
     AUDIO_KEYWORDS = [
-        # TODO: Add Persian keywords (e.g., "رونویسی صوت", "تبدیل صدا به متن", etc.)
+        # Persian
+        "رونویسی صوت", "رونویسی صدا", "تبدیل صدا به متن",
+        "صوت به متن", "گفتار به نوشتار", "رونویسی کن",
+        "صدا رو متن کن", "این صدا چی میگه", "متن صدا",
         # English
         "transcribe", "transcription", "speech to text",
         "convert audio", "audio to text", "listen to",
@@ -171,7 +190,11 @@ class IntentDetector:
 
     # ===== DOCUMENT/CODE ANALYSIS =====
     ANALYSIS_KEYWORDS = [
-        # TODO: Add Persian keywords (e.g., "تحلیل سند", "بررسی کد", "خلاصه کردن", etc.)
+        # Persian
+        "تحلیل سند", "تحلیل فایل", "بررسی سند", "بررسی فایل",
+        "خلاصه کن سند", "خلاصه فایل", "توضیح بده سند",
+        "این فایل چیه", "این سند درباره چیه", "تحلیل کد",
+        "بررسی کد", "توضیح کد", "این کد چی کار میکنه",
         # Document analysis
         "analyze document", "analyze file", "review document",
         "summarize document", "explain document", "what is in",
