@@ -146,9 +146,9 @@ class MinIOStorageService:
             lifecycle_config = LifecycleConfig(
                 [
                     Rule(
+                        status="Enabled",
                         rule_id=f"delete-after-{days}-days",
                         expiration=Expiration(days=days),
-                        rule_status="Enabled",
                     )
                 ]
             )

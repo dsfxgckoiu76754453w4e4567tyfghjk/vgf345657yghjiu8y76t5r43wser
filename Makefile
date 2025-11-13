@@ -10,6 +10,7 @@ DOCKER_COMPOSE := docker compose
 APP_NAME := shia-chatbot
 DOCKER_IMAGE := $(APP_NAME):latest
 SRC_DIR := src/app
+MODULE_NAME := app
 TEST_DIR := tests
 
 # Default target - show help
@@ -45,10 +46,10 @@ setup: install-dev install-hooks docker-up db-upgrade ## Complete project setup 
 # ============================================================================
 
 dev: ## Start development server with hot reload
-	$(POETRY) run uvicorn $(SRC_DIR).main:app --reload --host 0.0.0.0 --port 8000
+	$(POETRY) run uvicorn $(MODULE_NAME).main:app --reload --host 0.0.0.0 --port 8000
 
 dev-docker: docker-up ## Start all services in Docker and run dev server
-	$(POETRY) run uvicorn $(SRC_DIR).main:app --reload --host 0.0.0.0 --port 8000
+	$(POETRY) run uvicorn $(MODULE_NAME).main:app --reload --host 0.0.0.0 --port 8000
 
 shell: ## Open interactive Python shell with app context
 	$(POETRY) run python
@@ -58,16 +59,16 @@ shell: ## Open interactive Python shell with app context
 # ============================================================================
 
 celery-worker: ## Start Celery worker for background tasks
-	$(POETRY) run celery -A $(SRC_DIR).tasks worker --loglevel=info --concurrency=4
+	$(POETRY) run celery -A $(MODULE_NAME).tasks worker --loglevel=info --concurrency=4
 
 celery-beat: ## Start Celery beat scheduler for periodic tasks
-	$(POETRY) run celery -A $(SRC_DIR).tasks beat --loglevel=info
+	$(POETRY) run celery -A $(MODULE_NAME).tasks beat --loglevel=info
 
 celery-worker-dev: ## Start Celery worker in development mode (auto-reload)
-	$(POETRY) run watchmedo auto-restart --directory=./$(SRC_DIR) --pattern=*.py --recursive -- celery -A $(SRC_DIR).tasks worker --loglevel=debug
+	$(POETRY) run watchmedo auto-restart --directory=./$(SRC_DIR) --pattern=*.py --recursive -- celery -A $(MODULE_NAME).tasks worker --loglevel=debug
 
 flower: ## Start Flower (Celery monitoring web UI)
-	$(POETRY) run celery -A $(SRC_DIR).tasks flower --port=5555
+	$(POETRY) run celery -A $(MODULE_NAME).tasks flower --port=5555
 	@echo "📊 Flower UI available at: http://localhost:5555"
 
 celery-purge: ## Purge all Celery tasks from queue (⚠️  Use with caution!)
@@ -75,46 +76,170 @@ celery-purge: ## Purge all Celery tasks from queue (⚠️  Use with caution!)
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		$(POETRY) run celery -A $(SRC_DIR).tasks purge; \
+		$(POETRY) run celery -A $(MODULE_NAME).tasks purge; \
 	else \
 		echo "❌ Operation cancelled"; \
 	fi
 
 # ============================================================================
-# Docker Operations
+# Docker Operations - New Optimized Architecture
+# ============================================================================
+#
+# Two Modes:
+#   Mode 1: Local development (app runs natively, all services in Docker)
+#   Mode 2: Environment releases (everything in Docker: DEV/STAGE/PROD)
+#
+# Architecture:
+#   docker-compose.base.yml           - All infrastructure services (shared)
+#   docker-compose.app.dev.yml        - DEV environment (ENVIRONMENT=dev)
+#   docker-compose.app.stage.yml      - STAGE environment (ENVIRONMENT=stage)
+#   docker-compose.app.prod.yml       - PROD environment (ENVIRONMENT=prod)
 # ============================================================================
 
-docker-up: ## Start all Docker services (PostgreSQL, Redis, Qdrant)
-	$(DOCKER_COMPOSE) up -d
-	@echo "✅ Docker services started"
+# ----------------------------------------------------------------------------
+# MODE 1: Local Development (No Image Build)
+# ----------------------------------------------------------------------------
+
+docker-local: ## Mode 1: Start ALL services (app runs natively)
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml up -d
+	@echo "✅ Local development infrastructure started (Mode 1)"
+	@echo ""
+	@echo "Services running in Docker:"
 	@echo "   - PostgreSQL: localhost:5433"
 	@echo "   - Redis: localhost:6379"
-	@echo "   - Qdrant: localhost:6333"
+	@echo "   - Qdrant: http://localhost:6333/dashboard"
+	@echo "   - MinIO: http://localhost:9000 (Console: http://localhost:9001)"
+	@echo "   - Prometheus: http://localhost:9090"
+	@echo "   - Grafana: http://localhost:3000 (admin/admin)"
+	@echo "   - Nginx: http://localhost:8100"
+	@echo ""
+	@echo "💡 Now run app natively:"
+	@echo "   make dev           # FastAPI with hot reload"
+	@echo "   make celery-worker # Celery worker"
+	@echo "   make flower        # Flower (or use Docker version on :5555)"
 
-docker-down: ## Stop all Docker services
-	$(DOCKER_COMPOSE) down
-	@echo "✅ Docker services stopped"
+docker-local-down: ## Mode 1: Stop all local development services
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml down
+	@echo "✅ Local development infrastructure stopped"
 
-docker-restart: docker-down docker-up ## Restart all Docker services
+docker-local-restart: docker-local-down docker-local ## Mode 1: Restart local development
+
+# ----------------------------------------------------------------------------
+# MODE 2: Environment Releases (With Image Build)
+# ----------------------------------------------------------------------------
+
+docker-dev: ## Mode 2: Start DEV environment (ENVIRONMENT=dev)
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.dev.yml up --build -d
+	@echo "✅ DEV environment started (Mode 2)"
+	@echo ""
+	@echo "Services available:"
+	@echo "   - App (FastAPI): http://localhost:8000 (Swagger: /docs)"
+	@echo "   - Flower (Celery): http://localhost:5555"
+	@echo "   - PostgreSQL: localhost:5433"
+	@echo "   - Redis: localhost:6379"
+	@echo "   - Qdrant: http://localhost:6333/dashboard"
+	@echo "   - MinIO: http://localhost:9000"
+	@echo "   - Prometheus: http://localhost:9090"
+	@echo "   - Grafana: http://localhost:3000 (admin/admin)"
+	@echo "   - Nginx: http://localhost:8100"
+	@echo ""
+	@echo "Environment: ENVIRONMENT=dev"
+	@echo "Container prefix: shia-chatbot-dev-*"
+
+docker-stage: ## Mode 2: Start STAGE environment (ENVIRONMENT=stage)
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.stage.yml up --build -d
+	@echo "✅ STAGE environment started (Mode 2)"
+	@echo ""
+	@echo "Services available:"
+	@echo "   - App (FastAPI): http://localhost:8001 (Swagger: /docs)"
+	@echo "   - Flower (Celery): http://localhost:5556"
+	@echo "   - All infrastructure services same as DEV"
+	@echo ""
+	@echo "Environment: ENVIRONMENT=stage"
+	@echo "Container prefix: shia-chatbot-stage-*"
+
+docker-prod: ## Mode 2: Start PROD environment (ENVIRONMENT=prod)
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.prod.yml up --build -d
+	@echo "✅ PROD environment started (Mode 2)"
+	@echo ""
+	@echo "Services available:"
+	@echo "   - App (FastAPI): http://localhost:8002 (Swagger: /docs)"
+	@echo "   - Flower (Celery): http://localhost:5557"
+	@echo "   - All infrastructure services same as DEV/STAGE"
+	@echo ""
+	@echo "Environment: ENVIRONMENT=prod"
+	@echo "Container prefix: shia-chatbot-prod-*"
+	@echo "⚠️  WARNING: Production mode - Debug disabled, warning-level logging"
+
+# Stop commands for environments
+docker-dev-down: ## Mode 2: Stop DEV environment
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.dev.yml down
+	@echo "✅ DEV environment stopped"
+
+docker-stage-down: ## Mode 2: Stop STAGE environment
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.stage.yml down
+	@echo "✅ STAGE environment stopped"
+
+docker-prod-down: ## Mode 2: Stop PROD environment
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.prod.yml down
+	@echo "✅ PROD environment stopped"
+
+# Restart commands
+docker-dev-restart: docker-dev-down docker-dev ## Mode 2: Restart DEV environment
+
+docker-stage-restart: docker-stage-down docker-stage ## Mode 2: Restart STAGE environment
+
+docker-prod-restart: docker-prod-down docker-prod ## Mode 2: Restart PROD environment
+
+# Legacy aliases (for backward compatibility)
+docker-up: docker-local ## Alias for docker-local (backward compatibility)
+
+docker-down: docker-local-down ## Alias for docker-local-down (backward compatibility)
 
 docker-build: ## Build Docker image for the application
 	docker build -t $(DOCKER_IMAGE) .
 	@echo "✅ Docker image built: $(DOCKER_IMAGE)"
 
-docker-logs: ## Show logs from all Docker services
-	$(DOCKER_COMPOSE) logs -f
+# Logs commands
+docker-logs-base: ## Show logs from base infrastructure services
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml logs -f
 
-docker-logs-app: ## Show logs from application service only
-	$(DOCKER_COMPOSE) logs -f app
+docker-logs-dev: ## Show logs from DEV environment
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.dev.yml logs -f
 
-docker-logs-postgres: ## Show logs from PostgreSQL service
-	$(DOCKER_COMPOSE) logs -f postgres
+docker-logs-stage: ## Show logs from STAGE environment
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.stage.yml logs -f
 
-docker-logs-redis: ## Show logs from Redis service
-	$(DOCKER_COMPOSE) logs -f redis
+docker-logs-prod: ## Show logs from PROD environment
+	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.prod.yml logs -f
 
-docker-logs-qdrant: ## Show logs from Qdrant service
-	$(DOCKER_COMPOSE) logs -f qdrant
+docker-logs-app: ## Show logs from app container (specify ENV=dev|stage|prod)
+	@if [ "$(ENV)" = "dev" ]; then \
+		docker logs -f shia-chatbot-dev-app; \
+	elif [ "$(ENV)" = "stage" ]; then \
+		docker logs -f shia-chatbot-stage-app; \
+	elif [ "$(ENV)" = "prod" ]; then \
+		docker logs -f shia-chatbot-prod-app; \
+	else \
+		echo "Usage: make docker-logs-app ENV=dev|stage|prod"; \
+	fi
+
+docker-logs-postgres: ## Show logs from PostgreSQL
+	docker logs -f shia-chatbot-postgres
+
+docker-logs-redis: ## Show logs from Redis
+	docker logs -f shia-chatbot-redis
+
+docker-logs-celery: ## Show logs from Celery worker (specify ENV=dev|stage|prod)
+	@if [ "$(ENV)" = "dev" ]; then \
+		docker logs -f shia-chatbot-dev-celery-worker; \
+	elif [ "$(ENV)" = "stage" ]; then \
+		docker logs -f shia-chatbot-stage-celery-worker; \
+	elif [ "$(ENV)" = "prod" ]; then \
+		docker logs -f shia-chatbot-prod-celery-worker; \
+	else \
+		echo "Usage: make docker-logs-celery ENV=dev|stage|prod"; \
+	fi
 
 docker-ps: ## Check status and health of all Docker services
 	$(DOCKER_COMPOSE) ps
@@ -122,18 +247,75 @@ docker-ps: ## Check status and health of all Docker services
 	@echo "Volume Status:"
 	@docker volume ls | grep $(APP_NAME) || docker volume ls | grep shia-chatbot || echo "No volumes found"
 
-docker-health: ## Check health status of all services
+docker-health: ## Check health of all running Docker services
 	@echo "🏥 Checking service health..."
-	@$(DOCKER_COMPOSE) ps | grep -E "healthy|unhealthy" || echo "Health checks running..."
 	@echo ""
-	@echo "Testing PostgreSQL connection:"
-	@docker exec shia-chatbot-postgres pg_isready -U postgres || echo "⚠️  PostgreSQL not ready"
+	@echo "=== Core Infrastructure (Base Services) ==="
+	@echo -n "PostgreSQL: "
+	@docker exec shia-chatbot-postgres pg_isready -U postgres 2>/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Redis: "
+	@docker exec shia-chatbot-redis redis-cli ping 2>/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Qdrant: "
+	@curl -sf http://localhost:6333/healthz >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "MinIO: "
+	@curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Prometheus: "
+	@curl -sf http://localhost:9090/-/healthy >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Grafana: "
+	@curl -sf http://localhost:3000/api/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "Nginx: "
+	@docker exec shia-chatbot-nginx nginx -t >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo ""
-	@echo "Testing Redis connection:"
-	@docker exec shia-chatbot-redis redis-cli ping || echo "⚠️  Redis not ready"
+	@echo "=== DEV Environment (if running) ==="
+	@echo -n "DEV App: "
+	@curl -sf http://localhost:8000/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "DEV Celery: "
+	@docker exec shia-chatbot-dev-celery-worker celery -A app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "DEV Flower: "
+	@curl -sf http://localhost:5555/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo ""
-	@echo "Testing Qdrant connection:"
-	@curl -s http://localhost:6333/healthz || echo "⚠️  Qdrant not ready"
+	@echo "=== STAGE Environment (if running) ==="
+	@echo -n "STAGE App: "
+	@curl -sf http://localhost:8001/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "STAGE Celery: "
+	@docker exec shia-chatbot-stage-celery-worker celery -A app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "STAGE Flower: "
+	@curl -sf http://localhost:5556/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo ""
+	@echo "=== PROD Environment (if running) ==="
+	@echo -n "PROD App: "
+	@curl -sf http://localhost:8002/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "PROD Celery: "
+	@docker exec shia-chatbot-prod-celery-worker celery -A app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@echo -n "PROD Flower: "
+	@curl -sf http://localhost:5557/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
+	@echo ""
+	@echo "💡 Modes:"
+	@echo "   Mode 1: make docker-local (then run: make dev)"
+	@echo "   Mode 2: make docker-dev | docker-stage | docker-prod"
+
+# Environment Promotion Commands
+docker-promote-dev-stage: ## Promote approved data from DEV to STAGE
+	@echo "🔄 Promoting data from DEV → STAGE..."
+	@echo "⚠️  This will copy approved content from DEV to STAGE environment"
+	@read -p "Continue? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		POETRY run python scripts/promote.py --source dev --target stage; \
+	else \
+		echo "❌ Promotion cancelled"; \
+	fi
+
+docker-promote-stage-prod: ## Promote approved data from STAGE to PROD
+	@echo "🔄 Promoting data from STAGE → PROD..."
+	@echo "⚠️  WARNING: This will affect PRODUCTION environment!"
+	@read -p "Are you absolutely sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		POETRY run python scripts/promote.py --source stage --target prod; \
+	else \
+		echo "❌ Promotion cancelled"; \
+	fi
 
 docker-clean: ## Remove all Docker containers and images (preserves volumes)
 	$(DOCKER_COMPOSE) down --rmi all
@@ -364,7 +546,7 @@ deploy-prod: ## Deploy to production (requires manual confirmation)
 	fi
 
 run-prod: ## Run production server (not for actual production, use docker-compose)
-	$(POETRY) run uvicorn $(SRC_DIR).main:app --host 0.0.0.0 --port 8000 --workers 4
+	$(POETRY) run uvicorn $(MODULE_NAME).main:app --host 0.0.0.0 --port 8000 --workers 4
 
 # ============================================================================
 # Monitoring & Observability
