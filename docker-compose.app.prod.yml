@@ -137,7 +137,7 @@ services:
         - ENVIRONMENT=prod
     image: shia-chatbot:prod
     container_name: shia-chatbot-prod-celery-worker
-    command: celery -A src.app.tasks worker --loglevel=warning --concurrency=8
+    command: celery -A app.tasks worker --loglevel=warning --concurrency=8
     env_file:
       - .env.prod
     environment:
@@ -170,7 +170,7 @@ services:
       app:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "celery -A src.app.tasks inspect ping -d celery@$$HOSTNAME"]
+      test: ["CMD-SHELL", "celery -A app.tasks inspect ping -d celery@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -196,7 +196,7 @@ services:
         - ENVIRONMENT=prod
     image: shia-chatbot:prod
     container_name: shia-chatbot-prod-celery-beat
-    command: celery -A src.app.tasks beat --loglevel=warning
+    command: celery -A app.tasks beat --loglevel=warning
     env_file:
       - .env.prod
     environment:
@@ -240,7 +240,7 @@ services:
         - ENVIRONMENT=prod
     image: shia-chatbot:prod
     container_name: shia-chatbot-prod-flower
-    command: celery -A src.app.tasks flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
+    command: celery -A app.tasks flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
     ports:
       - "5557:5555"  # Different external port to avoid conflict with DEV/STAGE
     env_file:
