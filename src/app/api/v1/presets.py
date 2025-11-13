@@ -29,7 +29,7 @@ class PresetCreateRequest(BaseModel):
     temperature: float | None = Field(None, ge=0.0, le=2.0, description="Temperature (0.0-2.0)")
     top_p: float | None = Field(None, ge=0.0, le=1.0, description="Top P (0.0-1.0)")
     max_tokens: int | None = Field(None, gt=0, description="Maximum tokens")
-    model_parameters: dict[str, Any] | None = Field(None, description="Additional model configuration")
+    extra_model_config: dict[str, Any] | None = Field(None, description="Additional model configuration")
     provider_preferences: dict[str, Any] | None = Field(None, description="Provider routing preferences")
     is_public: bool = Field(False, description="Make preset publicly shareable")
 
@@ -44,7 +44,7 @@ class PresetUpdateRequest(BaseModel):
     temperature: float | None = Field(None, ge=0.0, le=2.0)
     top_p: float | None = Field(None, ge=0.0, le=1.0)
     max_tokens: int | None = Field(None, gt=0)
-    model_parameters: dict[str, Any] | None = None
+    extra_model_config: dict[str, Any] | None = None
     provider_preferences: dict[str, Any] | None = None
     is_public: bool | None = None
 
@@ -62,7 +62,7 @@ class PresetResponse(BaseModel):
     temperature: float | None
     top_p: float | None
     max_tokens: int | None
-    model_parameters: str | None
+    extra_model_config: str | None
     provider_preferences: str | None
     is_public: bool
     version: int
@@ -120,7 +120,7 @@ async def create_preset(
             temperature=request_data.temperature,
             top_p=request_data.top_p,
             max_tokens=request_data.max_tokens,
-            model_config=request_data.model_config,
+            model_config=request_data.extra_model_config,
             provider_preferences=request_data.provider_preferences,
             is_public=request_data.is_public,
         )
@@ -143,7 +143,7 @@ async def create_preset(
             temperature=float(preset.temperature) if preset.temperature else None,
             top_p=float(preset.top_p) if preset.top_p else None,
             max_tokens=preset.max_tokens,
-            model_config=preset.model_config,
+            model_config=preset.extra_model_config,
             provider_preferences=preset.provider_preferences,
             is_public=preset.is_public or False,
             version=preset.version or 1,
@@ -198,7 +198,7 @@ async def list_presets(
                     temperature=float(preset.temperature) if preset.temperature else None,
                     top_p=float(preset.top_p) if preset.top_p else None,
                     max_tokens=preset.max_tokens,
-                    model_config=preset.model_config,
+                    model_config=preset.extra_model_config,
                     provider_preferences=preset.provider_preferences,
                     is_public=preset.is_public or False,
                     version=preset.version or 1,
@@ -255,7 +255,7 @@ async def get_preset(
             temperature=float(preset.temperature) if preset.temperature else None,
             top_p=float(preset.top_p) if preset.top_p else None,
             max_tokens=preset.max_tokens,
-            model_config=preset.model_config,
+            model_config=preset.extra_model_config,
             provider_preferences=preset.provider_preferences,
             is_public=preset.is_public or False,
             version=preset.version or 1,
@@ -310,7 +310,7 @@ async def get_preset_by_slug(
             temperature=float(preset.temperature) if preset.temperature else None,
             top_p=float(preset.top_p) if preset.top_p else None,
             max_tokens=preset.max_tokens,
-            model_config=preset.model_config,
+            model_config=preset.extra_model_config,
             provider_preferences=preset.provider_preferences,
             is_public=preset.is_public or False,
             version=preset.version or 1,
@@ -372,7 +372,7 @@ async def update_preset(
             temperature=float(preset.temperature) if preset.temperature else None,
             top_p=float(preset.top_p) if preset.top_p else None,
             max_tokens=preset.max_tokens,
-            model_config=preset.model_config,
+            model_config=preset.extra_model_config,
             provider_preferences=preset.provider_preferences,
             is_public=preset.is_public or False,
             version=preset.version or 1,
@@ -473,7 +473,7 @@ async def duplicate_preset(
             temperature=float(preset.temperature) if preset.temperature else None,
             top_p=float(preset.top_p) if preset.top_p else None,
             max_tokens=preset.max_tokens,
-            model_config=preset.model_config,
+            model_config=preset.extra_model_config,
             provider_preferences=preset.provider_preferences,
             is_public=preset.is_public or False,
             version=preset.version or 1,

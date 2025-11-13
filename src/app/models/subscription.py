@@ -234,7 +234,7 @@ class ModelPreset(Base):
     max_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # Advanced configuration
-    model_config: Mapped[Optional[dict]] = mapped_column(
+    extra_model_config: Mapped[Optional[dict]] = mapped_column(
         String, nullable=True
     )  # JSONB for all params
     provider_preferences: Mapped[Optional[dict]] = mapped_column(

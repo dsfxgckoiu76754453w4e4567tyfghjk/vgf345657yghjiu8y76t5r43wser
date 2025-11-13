@@ -57,7 +57,8 @@ class MinIOStorageService:
 
         except Exception as e:
             logger.error("minio_initialization_failed", error=str(e))
-            raise
+            logger.warning("minio_service_disabled_due_to_error", error=str(e))
+            self.client = None
 
     def _get_env_bucket_name(self, base_bucket: str) -> str:
         """

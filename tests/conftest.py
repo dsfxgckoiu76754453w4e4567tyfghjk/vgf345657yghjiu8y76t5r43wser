@@ -10,6 +10,7 @@ from sqlalchemy.pool import NullPool
 
 from app.db.base import Base
 from app.core.config import get_settings
+import app.models  # noqa: F401 - Import to register all models with SQLAlchemy
 
 settings = get_settings()
 
