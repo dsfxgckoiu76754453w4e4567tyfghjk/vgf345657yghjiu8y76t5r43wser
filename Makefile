@@ -55,21 +55,74 @@ shell: ## Open interactive Python shell with app context
 	$(POETRY) run python
 
 # ============================================================================
-# Celery & Background Tasks
+# Celery & Background Tasks (Official Best Practices)
+# ============================================================================
+#
+# Production deployment uses priority-based workers (recommended):
+#   make celery-worker-high    - High priority queue (chat, images, asr)
+#   make celery-worker-medium  - Medium priority queue (embeddings, storage)
+#   make celery-worker-low     - Low priority queue (email, cleanup)
+#   make celery-beat           - Periodic task scheduler
+#
+# Development uses single worker for all queues:
+#   make celery-worker-dev     - All queues (development only)
+#
 # ============================================================================
 
-celery-worker: ## Start Celery worker for background tasks
-	$(POETRY) run celery -A $(MODULE_NAME).tasks worker --loglevel=info --concurrency=4
+# Production Workers (Priority-Based)
+celery-worker-high: ## Start HIGH priority worker (production)
+	@chmod +x scripts/celery/start_worker_high_priority.sh
+	@scripts/celery/start_worker_high_priority.sh
 
+celery-worker-medium: ## Start MEDIUM priority worker (production)
+	@chmod +x scripts/celery/start_worker_medium_priority.sh
+	@scripts/celery/start_worker_medium_priority.sh
+
+celery-worker-low: ## Start LOW priority worker (production)
+	@chmod +x scripts/celery/start_worker_low_priority.sh
+	@scripts/celery/start_worker_low_priority.sh
+
+celery-worker-all-prod: ## Start ALL priority workers (production)
+	@echo "🚀 Starting all priority workers..."
+	@chmod +x scripts/celery/*.sh
+	@scripts/celery/start_worker_high_priority.sh &
+	@scripts/celery/start_worker_medium_priority.sh &
+	@scripts/celery/start_worker_low_priority.sh &
+	@echo "✅ All priority workers started in background"
+
+# Beat Scheduler
 celery-beat: ## Start Celery beat scheduler for periodic tasks
-	$(POETRY) run celery -A $(MODULE_NAME).tasks beat --loglevel=info
+	@chmod +x scripts/celery/start_beat.sh
+	@scripts/celery/start_beat.sh
 
-celery-worker-dev: ## Start Celery worker in development mode (auto-reload)
+# Development Workers
+celery-worker: celery-worker-dev ## Alias for celery-worker-dev
+
+celery-worker-dev: ## Start Celery worker (all queues - development only)
+	@chmod +x scripts/celery/start_worker_all_queues.sh
+	@scripts/celery/start_worker_all_queues.sh
+
+celery-worker-dev-reload: ## Start Celery worker with auto-reload (development)
 	$(POETRY) run watchmedo auto-restart --directory=./$(SRC_DIR) --pattern=*.py --recursive -- celery -A $(MODULE_NAME).tasks worker --loglevel=debug
 
+# Monitoring
 flower: ## Start Flower (Celery monitoring web UI)
 	$(POETRY) run celery -A $(MODULE_NAME).tasks flower --port=5555
 	@echo "📊 Flower UI available at: http://localhost:5555"
+
+# Management Commands
+celery-inspect: ## Inspect active workers and queues
+	@echo "Active Workers:"
+	@$(POETRY) run celery -A $(MODULE_NAME).tasks inspect active || echo "No workers running"
+	@echo ""
+	@echo "Registered Tasks:"
+	@$(POETRY) run celery -A $(MODULE_NAME).tasks inspect registered || echo "No workers running"
+	@echo ""
+	@echo "Active Queues:"
+	@$(POETRY) run celery -A $(MODULE_NAME).tasks inspect active_queues || echo "No workers running"
+
+celery-stats: ## Show Celery worker statistics
+	$(POETRY) run celery -A $(MODULE_NAME).tasks inspect stats
 
 celery-purge: ## Purge all Celery tasks from queue (⚠️  Use with caution!)
 	@echo "⚠️  WARNING: This will DELETE ALL pending tasks!"

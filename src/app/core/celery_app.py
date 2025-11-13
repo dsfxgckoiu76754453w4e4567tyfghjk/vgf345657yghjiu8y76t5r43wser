@@ -1,19 +1,19 @@
 """
-Celery application configuration for distributed task queue.
+Celery application configuration for distributed task queue (Official best practice).
 
-This module sets up Celery with:
-- Redis broker for message queue
-- PostgreSQL result backend for task state
-- Environment-aware configuration
-- Priority-based queue routing
-- Auto-discovery of tasks
-- Prometheus metrics integration
+This module follows the official Celery application factory pattern:
+https://docs.celeryproject.org/en/stable/userguide/application.html
+
+Key features:
+- Application factory pattern for better testability
+- Configuration loaded from celeryconfig.py (official pattern)
+- Signal handlers for logging and Prometheus metrics
+- Auto-discovery of tasks from app.tasks
+- Production-ready worker management
 """
 
 import time
 from celery import Celery, signals
-from celery.schedules import crontab
-from kombu import Exchange, Queue
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -21,236 +21,59 @@ from app.core import metrics
 
 logger = get_logger(__name__)
 
-# Task timing storage (for duration tracking)
+# Task timing storage (for duration tracking in signals)
 _task_start_times = {}
 
-# ============================================================================
-# CELERY APPLICATION INITIALIZATION
-# ============================================================================
-
-celery_app = Celery(
-    "wisqu_tasks",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
-)
 
 # ============================================================================
-# CELERY CONFIGURATION
+# CELERY APPLICATION FACTORY (Official Pattern)
 # ============================================================================
 
-celery_app.conf.update(
-    # Serialization
-    task_serializer="json",
-    accept_content=["json"],
-    result_serializer="json",
 
-    # Timezone
-    timezone="UTC",
-    enable_utc=True,
+def create_celery_app() -> Celery:
+    """
+    Factory function to create Celery application (Official best practice).
 
-    # Task execution settings
-    task_track_started=True,  # Track task start time
-    task_time_limit=600,  # 10 minutes hard limit
-    task_soft_time_limit=540,  # 9 minutes soft limit (graceful)
-    task_acks_late=True,  # Acknowledge after completion (for reliability)
-    task_reject_on_worker_lost=True,  # Requeue tasks if worker crashes
-    worker_prefetch_multiplier=1,  # Prefetch only 1 task per worker
-    worker_max_tasks_per_child=1000,  # Restart worker after 1000 tasks (memory leak prevention)
+    This follows the official Celery pattern:
+    https://docs.celeryproject.org/en/stable/django/first-steps-with-django.html#django-first-steps
 
-    # Result backend settings
-    result_expires=3600,  # Results expire after 1 hour
-    result_extended=True,  # Store more task metadata
-    result_compression='gzip',  # Compress results
+    Benefits:
+    - Separation of concerns (config in celeryconfig.py)
+    - Better testability (can create multiple instances)
+    - Easier configuration management
+    - Follows official Celery documentation
 
-    # Database result backend configuration
-    database_table_names={
-        'task': 'celery_taskmeta',
-        'group': 'celery_groupmeta',
-    },
-    database_short_lived_sessions=True,  # Use short-lived DB sessions
+    Returns:
+        Configured Celery application instance
+    """
+    # Create Celery app instance
+    app = Celery("wisqu_tasks")
 
-    # Broker settings (Redis)
-    broker_connection_retry_on_startup=True,
-    broker_connection_max_retries=10,
-    broker_transport_options={
-        'visibility_timeout': 43200,  # 12 hours
-        'fanout_prefix': True,
-        'fanout_patterns': True,
-        'socket_keepalive': True,
-        'health_check_interval': 30,
-    },
+    # Load configuration from celeryconfig.py (official pattern)
+    # This replaces inline configuration with a dedicated config module
+    app.config_from_object("app.celeryconfig")
 
-    # Task result backend transport options
-    result_backend_transport_options={
-        'master_name': 'mymaster',
-        'visibility_timeout': 3600,
-    },
+    # Auto-discover tasks in app.tasks module
+    # force=True ensures tasks are discovered even if already imported
+    app.autodiscover_tasks(["app.tasks"], force=True)
 
-    # Worker settings
-    worker_send_task_events=True,  # Send task events for monitoring
-    task_send_sent_event=True,  # Send task-sent events
+    logger.info(
+        "celery_app_created",
+        app_name=app.main,
+        config_module="app.celeryconfig",
+        broker_url_masked=settings.celery_broker_url.split("@")[-1]
+        if "@" in settings.celery_broker_url
+        else settings.celery_broker_url,
+        result_backend="postgresql",
+        environment=settings.environment,
+        task_always_eager=settings.celery_task_always_eager,
+    )
 
-    # Beat scheduler settings (for periodic tasks)
-    beat_schedule_filename='/tmp/celerybeat-schedule',
-    beat_sync_every=1,  # Sync schedule every 1 task
+    return app
 
-    # Monitoring
-    worker_log_format='[%(asctime)s: %(levelname)s/%(processName)s] %(message)s',
-    worker_task_log_format='[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s',
-)
 
-# ============================================================================
-# QUEUE DEFINITIONS (Priority-Based Routing)
-# ============================================================================
-
-default_exchange = Exchange('tasks', type='topic')
-
-celery_app.conf.task_default_queue = 'medium_priority'
-celery_app.conf.task_default_exchange = 'tasks'
-celery_app.conf.task_default_routing_key = 'task.default'
-
-celery_app.conf.task_queues = (
-    # High priority: User-facing operations (Chat, Images, ASR)
-    Queue(
-        'high_priority',
-        exchange=default_exchange,
-        routing_key='high.*',
-        queue_arguments={
-            'x-max-priority': 10,  # Enable priority support
-            'x-message-ttl': 3600000,  # 1 hour TTL
-        },
-    ),
-
-    # Medium priority: Background processing (Embeddings, Files, Promotion)
-    Queue(
-        'medium_priority',
-        exchange=default_exchange,
-        routing_key='medium.*',
-        queue_arguments={
-            'x-max-priority': 5,
-            'x-message-ttl': 7200000,  # 2 hours TTL
-        },
-    ),
-
-    # Low priority: Fire-and-forget (Emails, Langfuse, Cleanup)
-    Queue(
-        'low_priority',
-        exchange=default_exchange,
-        routing_key='low.*',
-        queue_arguments={
-            'x-max-priority': 1,
-            'x-message-ttl': 14400000,  # 4 hours TTL
-        },
-    ),
-)
-
-# ============================================================================
-# TASK ROUTING CONFIGURATION
-# ============================================================================
-
-celery_app.conf.task_routes = {
-    # 🔴 HIGH PRIORITY - User-facing operations
-    'app.tasks.chat.process_chat_message': {
-        'queue': 'high_priority',
-        'routing_key': 'high.chat',
-        'priority': 10,
-    },
-    'app.tasks.images.generate_image': {
-        'queue': 'high_priority',
-        'routing_key': 'high.image',
-        'priority': 9,
-    },
-    'app.tasks.asr.transcribe_audio': {
-        'queue': 'high_priority',
-        'routing_key': 'high.asr',
-        'priority': 8,
-    },
-    'app.tasks.web_search.search_web': {
-        'queue': 'high_priority',
-        'routing_key': 'high.search',
-        'priority': 7,
-    },
-
-    # 🟡 MEDIUM PRIORITY - Background processing
-    'app.tasks.embeddings.generate_batch_embeddings': {
-        'queue': 'medium_priority',
-        'routing_key': 'medium.embeddings',
-        'priority': 5,
-    },
-    'app.tasks.storage.upload_large_file': {
-        'queue': 'medium_priority',
-        'routing_key': 'medium.storage',
-        'priority': 5,
-    },
-    'app.tasks.promotion.execute_promotion': {
-        'queue': 'medium_priority',
-        'routing_key': 'medium.promotion',
-        'priority': 4,
-    },
-    'app.tasks.dataset.create_dataset': {
-        'queue': 'medium_priority',
-        'routing_key': 'medium.dataset',
-        'priority': 3,
-    },
-
-    # 🟢 LOW PRIORITY - Fire-and-forget
-    'app.tasks.email.send_email': {
-        'queue': 'low_priority',
-        'routing_key': 'low.email',
-        'priority': 2,
-    },
-    'app.tasks.langfuse_tasks.submit_trace': {
-        'queue': 'low_priority',
-        'routing_key': 'low.langfuse',
-        'priority': 1,
-    },
-    'app.tasks.cleanup.clean_expired_files': {
-        'queue': 'low_priority',
-        'routing_key': 'low.cleanup',
-        'priority': 1,
-    },
-    'app.tasks.cleanup.cleanup_old_tasks': {
-        'queue': 'low_priority',
-        'routing_key': 'low.cleanup',
-        'priority': 1,
-    },
-}
-
-# ============================================================================
-# CELERY BEAT SCHEDULE (Periodic Tasks / Cron Jobs)
-# ============================================================================
-
-celery_app.conf.beat_schedule = {
-    # Daily cleanup at 2 AM (environment-aware via cleanup task)
-    'cleanup-expired-files-daily': {
-        'task': 'app.tasks.cleanup.clean_expired_files',
-        'schedule': crontab(hour=2, minute=0),
-        'options': {
-            'queue': 'low_priority',
-            'expires': 3600,  # Expire after 1 hour if not executed
-        },
-    },
-
-    # Hourly cleanup of old Celery task results
-    'cleanup-old-task-results-hourly': {
-        'task': 'app.tasks.cleanup.cleanup_old_tasks',
-        'schedule': crontab(minute=0),
-        'options': {
-            'queue': 'low_priority',
-            'expires': 1800,
-        },
-    },
-
-    # Weekly leaderboard recalculation (Monday 3 AM)
-    'recalculate-leaderboard-weekly': {
-        'task': 'app.tasks.leaderboard.recalculate_rankings',
-        'schedule': crontab(hour=3, minute=0, day_of_week=1),
-        'options': {
-            'queue': 'medium_priority',
-            'expires': 7200,
-        },
-    },
-}
+# Create the Celery app instance using factory pattern
+celery_app = create_celery_app()
 
 # ============================================================================
 # CELERY SIGNALS (Logging and Monitoring)

@@ -1,5 +1,5 @@
 """
-Celery tasks for background processing.
+Celery tasks for background processing (Official Celery pattern).
 
 This package contains all async tasks organized by priority:
 
@@ -20,9 +20,19 @@ Low Priority (Fire-and-forget):
 - langfuse_tasks: Observability traces
 - cleanup: File and data cleanup
 - leaderboard: Ranking calculations
+
+Usage:
+    celery -A app.tasks worker --loglevel=info
+    celery -A app.tasks beat --loglevel=info
+    celery -A app.tasks flower
 """
 
+# Export the Celery app (official Celery pattern for task discovery)
+# This allows: celery -A app.tasks worker
+from app.core.celery_app import celery_app
+
 # Import all tasks to ensure they're registered with Celery
+# The autodiscover_tasks in celery_app.py will find these automatically
 from app.tasks import (  # noqa: F401
     asr,
     chat,
@@ -39,6 +49,7 @@ from app.tasks import (  # noqa: F401
 )
 
 __all__ = [
+    "celery_app",  # Export celery app for CLI usage
     "chat",
     "images",
     "asr",
