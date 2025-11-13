@@ -17,6 +17,7 @@ else:
     logger = get_logger(__name__)
 
 
+from app.core.circuit_breaker import circuit_breaker_registry
 class OpenRouterService:
     """
     Comprehensive OpenRouter client service with Langfuse observability.
@@ -60,6 +61,16 @@ class OpenRouterService:
             "openrouter_service_initialized",
             langfuse_enabled=settings.langfuse_enabled,
             base_url=self.base_url
+        )
+
+
+        # Circuit breaker for API call protection
+        self.circuit_breaker = circuit_breaker_registry.get_or_create(
+            name="openrouter_api",
+            failure_threshold=5,  # Open after 5 failures
+            recovery_timeout=60,  # Try recovery after 60 seconds
+            success_threshold=2,  # Need 2 successes to close
+            timeout_seconds=120,  # 2 minute timeout for LLM calls
         )
 
     async def chat_completion(

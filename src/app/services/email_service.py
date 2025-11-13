@@ -1,5 +1,6 @@
-"""Email notification service."""
+"""Email notification service with Mailgun and SMTP support."""
 
+import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -7,23 +8,32 @@ from typing import Optional
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.templates.email_templates import EmailTemplates
 
 logger = get_logger(__name__)
 settings = get_settings()
 
 
 class EmailService:
-    """Service for sending email notifications."""
+    """Service for sending email notifications via Mailgun or SMTP."""
 
     def __init__(self):
         """Initialize email service."""
-        # Email configuration from settings
-        self.smtp_host = getattr(settings, "smtp_host", "smtp.gmail.com")
-        self.smtp_port = getattr(settings, "smtp_port", 587)
-        self.smtp_username = getattr(settings, "smtp_username", None)
-        self.smtp_password = getattr(settings, "smtp_password", None)
-        self.from_email = getattr(settings, "from_email", "noreply@example.com")
-        self.from_name = getattr(settings, "from_name", "Shia Islamic Chatbot")
+        self.provider = settings.email_provider
+
+        # Mailgun configuration
+        self.mailgun_api_key = settings.mailgun_api_key
+        self.mailgun_domain = settings.mailgun_domain
+        self.mailgun_from_email = settings.mailgun_from_email
+        self.mailgun_from_name = settings.mailgun_from_name
+
+        # SMTP configuration (fallback)
+        self.smtp_host = settings.smtp_host
+        self.smtp_port = settings.smtp_port
+        self.smtp_username = settings.smtp_user
+        self.smtp_password = settings.smtp_password
+        self.smtp_from_email = settings.smtp_from_email
+        self.smtp_from_name = settings.smtp_from_name
 
     # ========================================================================
     # Core Email Sending
@@ -37,7 +47,110 @@ class EmailService:
         text_body: Optional[str] = None,
     ) -> bool:
         """
-        Send an email.
+        Send an email using configured provider (Mailgun or SMTP).
+
+        Args:
+            to_email: Recipient email address
+            subject: Email subject
+            html_body: HTML email body
+            text_body: Plain text email body (optional)
+
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        if self.provider == "mailgun" and self.mailgun_api_key and self.mailgun_domain:
+            return await self._send_via_mailgun(to_email, subject, html_body, text_body)
+        elif self.smtp_username and self.smtp_password:
+            return await self._send_via_smtp(to_email, subject, html_body, text_body)
+        else:
+            logger.error(
+                "email_not_configured",
+                message="No email provider configured. Please set up Mailgun or SMTP credentials.",
+            )
+            return False
+
+    async def _send_via_mailgun(
+        self,
+        to_email: str,
+        subject: str,
+        html_body: str,
+        text_body: Optional[str] = None,
+    ) -> bool:
+        """
+        Send email via Mailgun API.
+
+        Args:
+            to_email: Recipient email address
+            subject: Email subject
+            html_body: HTML email body
+            text_body: Plain text email body (optional)
+
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        try:
+            from mailgun.client import Client
+
+            # Initialize Mailgun client
+            client = Client(auth=("api", self.mailgun_api_key))
+
+            # Prepare email data
+            data = {
+                "from": f"{self.mailgun_from_name} <{self.mailgun_from_email}>",
+                "to": to_email,
+                "subject": subject,
+                "html": html_body,
+            }
+
+            # Add plain text body if provided
+            if text_body:
+                data["text"] = text_body
+
+            # Send via Mailgun
+            response = client.messages.create(data=data, domain=self.mailgun_domain)
+
+            if response.status_code == 200:
+                logger.info(
+                    "email_sent_via_mailgun",
+                    to_email=to_email,
+                    subject=subject,
+                    message_id=response.json().get("id"),
+                )
+                return True
+            else:
+                logger.error(
+                    "mailgun_send_failed",
+                    to_email=to_email,
+                    status_code=response.status_code,
+                    response=response.text,
+                )
+                return False
+
+        except ImportError:
+            logger.error(
+                "mailgun_not_installed",
+                message="mailgun-python package not installed. Install with: pip install mailgun-python",
+            )
+            # Fallback to SMTP
+            return await self._send_via_smtp(to_email, subject, html_body, text_body)
+        except Exception as e:
+            logger.error(
+                "mailgun_send_error",
+                error=str(e),
+                to_email=to_email,
+            )
+            # Fallback to SMTP
+            return await self._send_via_smtp(to_email, subject, html_body, text_body)
+
+    async def _send_via_smtp(
+        self,
+        to_email: str,
+        subject: str,
+        html_body: str,
+        text_body: Optional[str] = None,
+    ) -> bool:
+        """
+        Send email via SMTP (fallback method).
 
         Args:
             to_email: Recipient email address
@@ -51,7 +164,7 @@ class EmailService:
         try:
             # Create message
             msg = MIMEMultipart("alternative")
-            msg["From"] = f"{self.from_name} <{self.from_email}>"
+            msg["From"] = f"{self.smtp_from_name} <{self.smtp_from_email}>"
             msg["To"] = to_email
             msg["Subject"] = subject
 
@@ -71,20 +184,64 @@ class EmailService:
                     server.login(self.smtp_username, self.smtp_password)
                     server.send_message(msg)
 
-                logger.info("email_sent", to_email=to_email, subject=subject)
+                logger.info("email_sent_via_smtp", to_email=to_email, subject=subject)
                 return True
             else:
-                logger.warn(
-                    "email_not_configured",
-                    message="SMTP credentials not configured. Email not sent.",
-                    to_email=to_email,
-                    subject=subject,
+                logger.error(
+                    "smtp_not_configured",
+                    message="SMTP credentials not configured.",
                 )
                 return False
 
         except Exception as e:
-            logger.error("email_send_failed", error=str(e), to_email=to_email)
+            logger.error("smtp_send_failed", error=str(e), to_email=to_email)
             return False
+
+    # ========================================================================
+    # OTP & Authentication Emails
+    # ========================================================================
+
+    async def send_otp_email(
+        self,
+        to_email: str,
+        otp_code: str,
+        purpose: str = "email_verification",
+    ) -> bool:
+        """
+        Send OTP verification email.
+
+        Args:
+            to_email: Recipient email address
+            otp_code: 6-digit OTP code
+            purpose: Purpose (email_verification or password_reset)
+
+        Returns:
+            True if sent successfully
+        """
+        subject = "Verify Your Email" if purpose == "email_verification" else "Reset Your Password"
+        html_body, text_body = EmailTemplates.otp_verification_email(otp_code, purpose)
+
+        return await self.send_email(to_email, subject, html_body, text_body)
+
+    async def send_welcome_email(
+        self,
+        to_email: str,
+        user_name: str,
+    ) -> bool:
+        """
+        Send welcome email after successful registration.
+
+        Args:
+            to_email: User's email address
+            user_name: User's full name
+
+        Returns:
+            True if sent successfully
+        """
+        subject = "Welcome to WisQu - Your Islamic Knowledge Companion"
+        html_body, text_body = EmailTemplates.welcome_email(user_name, to_email)
+
+        return await self.send_email(to_email, subject, html_body, text_body)
 
     # ========================================================================
     # Support Ticket Notifications

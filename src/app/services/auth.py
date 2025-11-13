@@ -17,6 +17,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import LinkedAuthProvider, OTPCode, User, UserSession, UserSettings
+from app.services.email_service import EmailService
 
 logger = get_logger(__name__)
 
@@ -97,7 +98,18 @@ class AuthService:
         await self.db.commit()
         await self.db.refresh(user)
 
-        logger.info("user_registered", user_id=str(user.id), email=email)
+        # Send OTP email
+        email_service = EmailService()
+        email_sent = await email_service.send_otp_email(
+            to_email=email,
+            otp_code=otp_code,
+            purpose="email_verification"
+        )
+
+        if email_sent:
+            logger.info("user_registered_otp_sent", user_id=str(user.id), email=email)
+        else:
+            logger.warning("user_registered_otp_send_failed", user_id=str(user.id), email=email)
 
         return user, otp_code
 
@@ -251,10 +263,161 @@ class AuthService:
         otp_code = self._generate_otp()
         expires_at = await self._create_otp(email, otp_code, purpose, user.id)
 
-        # TODO: Send email with OTP code
-        logger.info("otp_resent", email=email, purpose=purpose, otp_code=otp_code)
+        # Send OTP email
+        email_service = EmailService()
+        email_sent = await email_service.send_otp_email(
+            to_email=email,
+            otp_code=otp_code,
+            purpose=purpose
+        )
+
+        if email_sent:
+            logger.info("otp_resent_successfully", email=email, purpose=purpose)
+        else:
+            logger.warning("otp_resent_email_failed", email=email, purpose=purpose)
 
         return expires_at
+
+    async def google_oauth_login(
+        self,
+        google_user_info: dict,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> tuple[User, str, str, bool]:
+        """
+        Handle Google OAuth login with unified user account support.
+
+        If a user with the same email already exists (from email/password registration),
+        this method will link the Google OAuth provider to that existing user.
+
+        Args:
+            google_user_info: User info from Google ID token
+            ip_address: Request IP address
+            user_agent: User agent string
+
+        Returns:
+            tuple: (User, access_token, refresh_token, is_new_user)
+
+        Raises:
+            ValueError: If authentication fails
+        """
+        email = google_user_info.get("email")
+        google_sub = google_user_info.get("sub")
+        full_name = google_user_info.get("name")
+        profile_picture_url = google_user_info.get("picture")
+
+        if not email or not google_sub:
+            raise ValueError("AUTH_INVALID_GOOGLE_TOKEN")
+
+        # Check if user exists with this email (unified account logic)
+        result = await self.db.execute(select(User).where(User.email == email))
+        existing_user = result.scalar_one_or_none()
+
+        is_new_user = False
+
+        if existing_user:
+            # User exists with this email - link Google OAuth if not already linked
+            logger.info(
+                "google_oauth_existing_user",
+                user_id=str(existing_user.id),
+                email=email,
+            )
+
+            # Check if Google provider is already linked
+            provider_result = await self.db.execute(
+                select(LinkedAuthProvider)
+                .where(LinkedAuthProvider.user_id == existing_user.id)
+                .where(LinkedAuthProvider.provider_type == "google")
+            )
+            existing_google_provider = provider_result.scalar_one_or_none()
+
+            if not existing_google_provider:
+                # Link Google OAuth to existing user
+                google_provider = LinkedAuthProvider(
+                    user_id=existing_user.id,
+                    provider_type="google",
+                    provider_user_id=google_sub,
+                    provider_email=email,
+                    is_primary=False,  # Email/password is primary
+                    is_verified=True,  # Google accounts are pre-verified
+                )
+                self.db.add(google_provider)
+                logger.info(
+                    "google_provider_linked_to_existing_user",
+                    user_id=str(existing_user.id),
+                    email=email,
+                )
+
+            # Update user profile if needed
+            if profile_picture_url and not existing_user.profile_picture_url:
+                existing_user.profile_picture_url = profile_picture_url
+
+            if full_name and not existing_user.full_name:
+                existing_user.full_name = full_name
+
+            # Mark email as verified (Google accounts are verified)
+            existing_user.is_email_verified = True
+
+            user = existing_user
+        else:
+            # Create new user with Google OAuth
+            is_new_user = True
+
+            user = User(
+                email=email,
+                full_name=full_name,
+                profile_picture_url=profile_picture_url,
+                account_type="free",
+                is_email_verified=True,  # Google accounts are pre-verified
+                is_active=True,
+                password_hash=None,  # No password for OAuth-only users
+            )
+
+            self.db.add(user)
+            await self.db.flush()  # Get user ID
+
+            # Create Google OAuth provider
+            google_provider = LinkedAuthProvider(
+                user_id=user.id,
+                provider_type="google",
+                provider_user_id=google_sub,
+                provider_email=email,
+                is_primary=True,
+                is_verified=True,
+            )
+            self.db.add(google_provider)
+
+            # Create user settings
+            settings = UserSettings(user_id=user.id)
+            self.db.add(settings)
+
+            logger.info("new_user_created_via_google_oauth", user_id=str(user.id), email=email)
+
+        # Generate tokens
+        access_token = create_access_token(user.id)
+        refresh_token = create_refresh_token(user.id)
+
+        # Create session
+        session = UserSession(
+            user_id=user.id,
+            session_token=access_token,
+            refresh_token=refresh_token,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+            is_active=True,
+        )
+        self.db.add(session)
+
+        # Update last login
+        user.last_login_at = datetime.now(timezone.utc)
+
+        await self.db.commit()
+        await self.db.refresh(user)
+
+        logger.info("google_oauth_login_successful", user_id=str(user.id), email=email, is_new_user=is_new_user)
+
+        return user, access_token, refresh_token, is_new_user
 
     def _generate_otp(self, length: int = 6) -> str:
         """Generate a random OTP code."""

@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     # Environment
     environment: Literal["dev", "test", "prod"] = Field(default="dev")
 
+    # Temporal Workflow Engine
+    temporal_host: str = Field(default="localhost:7233")
+    temporal_namespace: str = Field(default="default")
+    temporal_task_queue: str = Field(default="chat-queue")
+    temporal_enabled: bool = Field(default=False)  # Enable for hybrid mode
+    
+
     # Application
     app_name: str = Field(default="Shia Islamic Chatbot")
     app_version: str = Field(default="1.0.0")
@@ -34,6 +41,11 @@ class Settings(BaseSettings):
     database_driver: str = Field(default="postgresql+asyncpg")
     database_pool_size: int = Field(default=20)
     database_max_overflow: int = Field(default=10)
+
+    # Database Read Replica (for read scaling)
+    database_read_replica_host: str | None = Field(default=None)  # If None, uses primary
+    database_read_replica_port: int | None = Field(default=None)
+    database_read_replica_enabled: bool = Field(default=False)
 
     # Database - Connection parameters (recommended for production)
     # Note: Individual parameters are always used to build the connection URL
@@ -93,10 +105,14 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="gemini-embedding-001")
     embedding_dimension: int = Field(default=3072)
 
+    # Reranker (for 2-stage retrieval)
+    reranker_enabled: bool = Field(default=True)
+    reranker_provider: Literal["cohere"] = Field(default="cohere")
+    reranker_model: str = Field(default="rerank-3.5")
+
     # Web Search
     web_search_enabled: bool = Field(default=True)
-    web_search_provider: Literal["tavily", "serper", "openrouter"] = Field(default="tavily")
-    tavily_api_key: str | None = Field(default=None)
+    web_search_provider: Literal["serper", "openrouter"] = Field(default="openrouter")
     serper_api_key: str | None = Field(default=None)
     # OpenRouter Search Configuration (when WEB_SEARCH_PROVIDER=openrouter)
     web_search_model: str = Field(default="perplexity/sonar")
@@ -199,12 +215,22 @@ class Settings(BaseSettings):
     huggingface_token: str | None = Field(default=None)
     huggingface_repo_id: str | None = Field(default=None)
 
-    # Email
+    # Email - SMTP (Legacy/Fallback)
     smtp_host: str = Field(default="smtp.gmail.com")
     smtp_port: int = Field(default=587)
     smtp_user: str | None = Field(default=None)
     smtp_password: str | None = Field(default=None)
     smtp_from_email: str = Field(default="noreply@example.com")
+    smtp_from_name: str = Field(default="WisQu Islamic Chatbot")
+
+    # Email - Mailgun (Recommended)
+    mailgun_api_key: str | None = Field(default=None)
+    mailgun_domain: str | None = Field(default=None)
+    mailgun_from_email: str = Field(default="noreply@wisqu.com")
+    mailgun_from_name: str = Field(default="WisQu Islamic Chatbot")
+
+    # Email Provider Selection
+    email_provider: Literal["smtp", "mailgun"] = Field(default="mailgun")
 
     # Super Admin (for initial setup)
     super_admin_email: str = Field(default="admin@wisqu.com")

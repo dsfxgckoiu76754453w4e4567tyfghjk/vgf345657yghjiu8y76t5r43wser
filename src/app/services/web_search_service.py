@@ -26,27 +26,24 @@ class WebSearchService:
     Service for web search with multi-provider support.
 
     Supports:
-    - Tavily (Recommended for LLM applications)
+    - OpenRouter (Primary - Search-enabled models like Perplexity Sonar)
     - Serper (Google Search API)
-    - OpenRouter (Search-enabled models like Perplexity Sonar)
     """
 
     def __init__(
         self,
-        provider: Optional[Literal["tavily", "serper", "openrouter"]] = None,
+        provider: Optional[Literal["serper", "openrouter"]] = None,
     ):
         """
         Initialize web search service.
 
         Args:
-            provider: Search provider (tavily, serper, or openrouter)
+            provider: Search provider (serper or openrouter)
         """
         self.provider = provider or settings.web_search_provider
 
         # Validate API keys
-        if self.provider == "tavily" and not settings.tavily_api_key:
-            raise ValueError("TAVILY_API_KEY is required when WEB_SEARCH_PROVIDER=tavily")
-        elif self.provider == "serper" and not settings.serper_api_key:
+        if self.provider == "serper" and not settings.serper_api_key:
             raise ValueError("SERPER_API_KEY is required when WEB_SEARCH_PROVIDER=serper")
         elif self.provider == "openrouter" and not settings.openrouter_api_key:
             raise ValueError("OPENROUTER_API_KEY is required when WEB_SEARCH_PROVIDER=openrouter")
@@ -79,9 +76,7 @@ class WebSearchService:
             return {"results": [], "message": "Web search is disabled"}
 
         try:
-            if self.provider == "tavily":
-                return await self._search_tavily(query, max_results, search_depth)
-            elif self.provider == "serper":
+            if self.provider == "serper":
                 return await self._search_serper(query, max_results)
             elif self.provider == "openrouter":
                 return await self._search_openrouter(query, max_results)
@@ -96,58 +91,6 @@ class WebSearchService:
                 error=str(e),
             )
             raise
-
-    async def _search_tavily(
-        self,
-        query: str,
-        max_results: int,
-        search_depth: str,
-    ) -> dict[str, Any]:
-        """
-        Search using Tavily API.
-
-        Tavily is optimized for LLM applications with:
-        - Clean, structured results
-        - Relevant content extraction
-        - Fast response times
-        """
-        url = "https://api.tavily.com/search"
-
-        payload = {
-            "api_key": settings.tavily_api_key,
-            "query": query,
-            "max_results": max_results,
-            "search_depth": search_depth,
-            "include_answer": True,  # Get AI-generated answer
-            "include_raw_content": False,  # Don't include full HTML
-        }
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, timeout=30.0)
-            response.raise_for_status()
-            data = response.json()
-
-        logger.info(
-            "web_search_completed",
-            provider="tavily",
-            query=query[:50],
-            results_count=len(data.get("results", [])),
-        )
-
-        return {
-            "provider": "tavily",
-            "query": query,
-            "answer": data.get("answer"),  # AI-generated summary
-            "results": [
-                {
-                    "title": result.get("title"),
-                    "url": result.get("url"),
-                    "content": result.get("content"),
-                    "score": result.get("score", 0),
-                }
-                for result in data.get("results", [])
-            ],
-        }
 
     async def _search_serper(
         self,
@@ -429,7 +372,6 @@ class WebSearchService:
         Estimate search cost in USD based on OpenRouter documentation.
 
         Costs (as of 2025):
-        - Tavily: $0.001 per search (basic), $0.01 (advanced)
         - Serper: $0.001 per search
         - OpenRouter with Exa: $4 per 1000 results ($0.02 for 5 results)
         - OpenRouter Native Search (per 1000 requests):
@@ -445,12 +387,7 @@ class WebSearchService:
         Returns:
             Estimated cost in USD
         """
-        if self.provider == "tavily":
-            # Basic search is cheaper
-            cost_per_search = 0.001
-            return num_searches * cost_per_search
-
-        elif self.provider == "serper":
+        if self.provider == "serper":
             cost_per_search = 0.001
             return num_searches * cost_per_search
 

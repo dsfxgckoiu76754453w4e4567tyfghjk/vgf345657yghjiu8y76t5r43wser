@@ -1,15 +1,20 @@
 """LangGraph orchestration service for RAG workflows."""
 
+import json
 from typing import Any, Annotated, TypedDict
 from operator import add
+from uuid import UUID
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.services.intent_detector import IntentDetector, IntentType
+from app.services.document_service import DocumentService
 
 logger = get_logger(__name__)
 
@@ -46,15 +51,22 @@ class LangGraphService:
     LangGraph-based orchestration for RAG workflows.
 
     Handles:
-    - Intent classification
-    - RAG retrieval
+    - Intent classification via IntentDetector
+    - RAG retrieval via DocumentService
     - Tool selection
     - Response generation
     """
 
-    def __init__(self):
-        """Initialize LangGraph service."""
+    def __init__(self, db: AsyncSession | None = None):
+        """
+        Initialize LangGraph service.
+
+        Args:
+            db: Database session for document retrieval
+        """
+        self.db = db
         self.llm = self._get_llm()
+        self.intent_detector = IntentDetector()
         self.graph = self._build_graph()
 
     def _get_llm(self):
@@ -106,9 +118,9 @@ class LangGraphService:
         Build the RAG processing graph.
 
         Graph flow:
-        1. classify_intent -> Determine query type
-        2. retrieve (if needed) -> Get relevant chunks
-        3. generate -> Generate response
+        1. classify_intent -> Determine query type using IntentDetector
+        2. retrieve (if needed) -> Get relevant chunks from DocumentService
+        3. generate -> Generate response using LLM with context
         """
         workflow = StateGraph(RAGState)
 
@@ -137,68 +149,130 @@ class LangGraphService:
 
     async def _classify_intent(self, state: RAGState) -> RAGState:
         """
-        Classify the user's intent.
+        Classify the user's intent using IntentDetector.
 
         Determines:
-        - Query type (general_qa, ahkam, hadith, etc.)
+        - Query type (image_generation, web_search, document_search, etc.)
         - Whether RAG retrieval is needed
         - Which tools might be needed
         """
         query = state["query"]
 
-        # Simple classification prompt
-        classification_prompt = f"""Classify this Islamic question:
-Query: {query}
+        # Use IntentDetector for multi-intent detection
+        detected_intents = await self.intent_detector.detect_intents(
+            message=query,
+            language="auto"  # Auto-detect language (en, fa, ar)
+        )
 
-Determine:
-1. Intent: general_qa, ahkam, hadith, datetime, math, or complex
-2. Requires RAG: true/false (does it need knowledge base retrieval?)
-
-Respond in JSON format:
-{{"intent": "...", "requires_rag": true/false, "requires_tools": ["tool1", "tool2"]}}
-"""
-
-        messages = [HumanMessage(content=classification_prompt)]
-        response = await self.llm.ainvoke(messages)
-
-        # Parse response (simplified - in production use structured output)
-        intent = "general_qa"  # Default
-        requires_rag = True
+        # Determine primary intent
+        primary_intent = "question_answer"  # Default
+        requires_rag = False
         requires_tools = []
+
+        if detected_intents:
+            # Get highest priority intent
+            primary = detected_intents[0]
+            primary_intent = primary.intent_type.value
+
+            # Check if document search is needed (RAG)
+            if any(i.intent_type == IntentType.DOCUMENT_SEARCH for i in detected_intents):
+                requires_rag = True
+                requires_tools.append("document_search")
+
+            # Check for other intents
+            for intent in detected_intents:
+                if intent.intent_type == IntentType.IMAGE_GENERATION:
+                    requires_tools.append("image_generation")
+                elif intent.intent_type in [IntentType.WEB_SEARCH, IntentType.DEEP_WEB_SEARCH]:
+                    requires_tools.append("web_search")
+                elif intent.intent_type == IntentType.TOOL_USAGE:
+                    requires_tools.append("tools")
+
+        # For Islamic Q&A, we always want RAG (knowledge base retrieval)
+        if primary_intent == "question_answer" and not requires_tools:
+            requires_rag = True
 
         logger.info(
             "intent_classified",
             query=query[:50],
-            intent=intent,
+            primary_intent=primary_intent,
             requires_rag=requires_rag,
+            tools_needed=requires_tools,
+            detected_intents_count=len(detected_intents),
         )
 
         return {
             **state,
-            "intent": intent,
+            "intent": primary_intent,
             "requires_rag": requires_rag,
             "requires_tools": requires_tools,
-            "messages": [response],
+            "messages": [],
         }
 
     async def _retrieve_chunks(self, state: RAGState) -> RAGState:
         """
-        Retrieve relevant chunks from vector DB.
+        Retrieve relevant chunks from vector DB using DocumentService.
 
-        Uses the document service for semantic search.
+        Uses semantic search to find the most relevant Islamic knowledge.
         """
         query = state["query"]
+        user_id = state["user_id"]
 
-        # TODO: Integrate with DocumentService
-        # For now, return empty
         retrieved_chunks = []
         context = ""
 
-        logger.info(
-            "chunks_retrieved",
-            query=query[:50],
-            count=len(retrieved_chunks),
-        )
+        # Only retrieve if we have a database session
+        if self.db:
+            try:
+                # Use DocumentService for semantic search
+                doc_service = DocumentService(self.db)
+
+                # Search for relevant chunks (top 5)
+                chunks = await doc_service.semantic_search(
+                    query=query,
+                    limit=5,
+                    user_id=UUID(user_id) if user_id else None,
+                    min_score=0.7,  # Only high-quality matches
+                )
+
+                # Format chunks for response
+                retrieved_chunks = [
+                    {
+                        "content": chunk.content,
+                        "source": chunk.document.title if hasattr(chunk, 'document') else "Unknown",
+                        "score": getattr(chunk, 'score', 0.0),
+                        "chunk_index": chunk.chunk_index,
+                    }
+                    for chunk in chunks
+                ]
+
+                # Build context string
+                context = "\n\n---\n\n".join([
+                    f"Source: {chunk['source']} (Relevance: {chunk['score']:.2%})\n{chunk['content']}"
+                    for chunk in retrieved_chunks
+                ])
+
+                logger.info(
+                    "chunks_retrieved",
+                    query=query[:50],
+                    count=len(retrieved_chunks),
+                    avg_score=sum(c['score'] for c in retrieved_chunks) / len(retrieved_chunks) if retrieved_chunks else 0,
+                )
+
+            except Exception as e:
+                logger.error(
+                    "chunk_retrieval_failed",
+                    query=query[:50],
+                    error=str(e),
+                )
+                # Continue without RAG on failure
+                retrieved_chunks = []
+                context = ""
+        else:
+            logger.warning(
+                "no_db_session",
+                message="Cannot retrieve chunks without database session",
+            )
 
         return {
             **state,
@@ -208,48 +282,84 @@ Respond in JSON format:
 
     async def _generate_response(self, state: RAGState) -> RAGState:
         """
-        Generate response using LLM.
+        Generate response using LLM with RAG context.
 
-        Uses RAG context if available.
+        Uses retrieved context if available, otherwise generates from LLM knowledge.
         """
         query = state["query"]
         context = state.get("context", "")
+        intent = state.get("intent", "question_answer")
 
-        # Build prompt
+        # Build prompt based on whether we have context
         if context:
             system_prompt = f"""You are a knowledgeable Shia Islamic scholar assistant.
-Answer the question using the provided context.
+Answer the question using the provided context from authenticated Islamic sources.
 
-Context:
+Context from Islamic knowledge base:
 {context}
 
-Always cite your sources when using the context."""
+Guidelines:
+- Always cite your sources when using the context
+- If the context doesn't contain enough information, you may supplement with your knowledge
+- Be respectful and accurate in all Islamic discussions
+- Use clear citations like [Source: Book Name]"""
         else:
             system_prompt = """You are a knowledgeable Shia Islamic scholar assistant.
-Provide accurate information about Shia Islam."""
+Provide accurate information about Shia Islam based on authenticated sources.
+
+Guidelines:
+- Be respectful and accurate in all Islamic discussions
+- Cite traditional sources when making Islamic rulings
+- If unsure, acknowledge the limits of your knowledge"""
 
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=query),
         ]
 
-        response = await self.llm.ainvoke(messages)
+        # Generate response
+        try:
+            response = await self.llm.ainvoke(messages)
 
-        logger.info(
-            "response_generated",
-            query=query[:50],
-            has_context=bool(context),
-        )
+            # Extract token usage if available
+            tokens_used = 0
+            if hasattr(response, 'response_metadata'):
+                usage = response.response_metadata.get('usage', {})
+                tokens_used = usage.get('total_tokens', 0)
 
-        return {
-            **state,
-            "response": response.content,
-            "sources": [],
-            "tokens_used": 0,  # TODO: Calculate from response
-        }
+            logger.info(
+                "response_generated",
+                query=query[:50],
+                has_context=bool(context),
+                intent=intent,
+                tokens_used=tokens_used,
+                response_length=len(response.content),
+            )
+
+            return {
+                **state,
+                "response": response.content,
+                "sources": state.get("retrieved_chunks", []),
+                "tokens_used": tokens_used,
+            }
+
+        except Exception as e:
+            logger.error(
+                "response_generation_failed",
+                query=query[:50],
+                error=str(e),
+            )
+
+            # Return error message
+            return {
+                **state,
+                "response": "I apologize, but I encountered an error generating the response. Please try again.",
+                "sources": [],
+                "tokens_used": 0,
+            }
 
     def _should_retrieve(self, state: RAGState) -> bool:
-        """Determine if RAG retrieval is needed."""
+        """Determine if RAG retrieval is needed based on intent classification."""
         return state.get("requires_rag", True)
 
     async def process_query(
@@ -273,6 +383,7 @@ Provide accurate information about Shia Islam."""
             "langgraph_processing_started",
             query=query[:50],
             user_id=user_id,
+            conversation_id=conversation_id,
         )
 
         # Initialize state
@@ -292,21 +403,49 @@ Provide accurate information about Shia Islam."""
         )
 
         # Run the graph
-        result = await self.graph.ainvoke(initial_state)
+        try:
+            result = await self.graph.ainvoke(initial_state)
 
-        logger.info(
-            "langgraph_processing_completed",
-            query=query[:50],
-            intent=result.get("intent"),
-        )
+            logger.info(
+                "langgraph_processing_completed",
+                query=query[:50],
+                intent=result.get("intent"),
+                sources_count=len(result.get("sources", [])),
+                tokens_used=result.get("tokens_used", 0),
+            )
 
-        return {
-            "response": result.get("response", ""),
-            "intent": result.get("intent", ""),
-            "sources": result.get("sources", []),
-            "tokens_used": result.get("tokens_used", 0),
-        }
+            return {
+                "response": result.get("response", ""),
+                "intent": result.get("intent", ""),
+                "sources": result.get("sources", []),
+                "tokens_used": result.get("tokens_used", 0),
+                "retrieved_chunks": result.get("retrieved_chunks", []),
+            }
+
+        except Exception as e:
+            logger.error(
+                "langgraph_processing_failed",
+                query=query[:50],
+                error=str(e),
+            )
+
+            return {
+                "response": "I apologize, but I encountered an error processing your query. Please try again.",
+                "intent": "error",
+                "sources": [],
+                "tokens_used": 0,
+                "retrieved_chunks": [],
+            }
 
 
-# Global LangGraph service instance
-langgraph_service = LangGraphService()
+def get_langgraph_service(db: AsyncSession) -> LangGraphService:
+    """
+    Factory function to create LangGraphService with database session.
+
+    Args:
+        db: Database session for document retrieval
+
+    Returns:
+        Configured LangGraphService instance
+    """
+    return LangGraphService(db=db)

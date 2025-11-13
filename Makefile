@@ -1,7 +1,7 @@
 # Shia Islamic Chatbot - Makefile
 # Comprehensive build automation for production-grade Shia Islamic chatbot
 
-.PHONY: help install dev test lint clean docker-up docker-down docker-build docker-ps docker-health docker-clean docker-clean-all docker-backup db-migrate db-upgrade db-downgrade format security deploy celery flower minio-ui docs verify-build test-local
+.PHONY: help install dev test lint clean docker-up docker-down docker-build docker-ps docker-health docker-clean docker-clean-all docker-backup db-migrate db-upgrade db-downgrade format security deploy temporal-ui minio-ui docs verify-build test-local
 
 # Variables
 PYTHON := python3
@@ -55,31 +55,17 @@ shell: ## Open interactive Python shell with app context
 	$(POETRY) run python
 
 # ============================================================================
-# Celery & Background Tasks
+# Temporal Workflows - Async Task Processing
+# ============================================================================
+#
+# Temporal handles all async background processing (replaces Celery)
+# Temporal UI is available at: http://localhost:8233
+#
 # ============================================================================
 
-celery-worker: ## Start Celery worker for background tasks
-	$(POETRY) run celery -A $(MODULE_NAME).tasks worker --loglevel=info --concurrency=4
-
-celery-beat: ## Start Celery beat scheduler for periodic tasks
-	$(POETRY) run celery -A $(MODULE_NAME).tasks beat --loglevel=info
-
-celery-worker-dev: ## Start Celery worker in development mode (auto-reload)
-	$(POETRY) run watchmedo auto-restart --directory=./$(SRC_DIR) --pattern=*.py --recursive -- celery -A $(MODULE_NAME).tasks worker --loglevel=debug
-
-flower: ## Start Flower (Celery monitoring web UI)
-	$(POETRY) run celery -A $(MODULE_NAME).tasks flower --port=5555
-	@echo "📊 Flower UI available at: http://localhost:5555"
-
-celery-purge: ## Purge all Celery tasks from queue (⚠️  Use with caution!)
-	@echo "⚠️  WARNING: This will DELETE ALL pending tasks!"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		$(POETRY) run celery -A $(MODULE_NAME).tasks purge; \
-	else \
-		echo "❌ Operation cancelled"; \
-	fi
+temporal-ui: ## Open Temporal Web UI
+	@echo "📊 Temporal UI: http://localhost:8233"
+	@open http://localhost:8233 || xdg-open http://localhost:8233 || echo "Navigate to http://localhost:8233"
 
 # ============================================================================
 # Docker Operations - New Optimized Architecture
@@ -158,7 +144,29 @@ docker-stage: ## Mode 2: Start STAGE environment (ENVIRONMENT=stage)
 	@echo "Environment: ENVIRONMENT=stage"
 	@echo "Container prefix: shia-chatbot-stage-*"
 
-docker-prod: ## Mode 2: Start PROD environment (ENVIRONMENT=prod)
+docker-prod: ## Mode 2: Start PROD environment (⚠️ SHARED VPS - BE CAREFUL!)
+	@echo "⚠️ ⚠️ ⚠️  PRODUCTION DEPLOYMENT WARNING  ⚠️ ⚠️ ⚠️"
+	@echo ""
+	@echo "This VPS hosts OTHER PRODUCTION CONTAINERS with REAL USERS!"
+	@echo ""
+	@echo "Before proceeding, verify:"
+	@echo "1. No container name conflicts: docker ps -a"
+	@echo "2. No port binding conflicts"
+	@echo "3. Sufficient system resources available"
+	@echo ""
+	@read -p "Have you read docker-compose.app.prod.yml header? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "❌ Please read the safety warnings in docker-compose.app.prod.yml first!"; \
+		exit 1; \
+	fi; \
+	read -p "Proceed with PRODUCTION deployment? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "❌ Deployment cancelled"; \
+		exit 1; \
+	fi
+	@echo "🚀 Starting PROD environment..."
 	$(DOCKER_COMPOSE) -f docker-compose.base.yml -f docker-compose.app.prod.yml up --build -d
 	@echo "✅ PROD environment started (Mode 2)"
 	@echo ""
@@ -322,9 +330,24 @@ docker-clean: ## Remove all Docker containers and images (preserves volumes)
 	@echo "✅ Docker containers and images removed (volumes preserved)"
 
 docker-clean-all: ## Remove all Docker containers, volumes, and images (⚠️  DELETES ALL DATA!)
-	@echo "⚠️  WARNING: This will DELETE ALL DATA in volumes!"
-	@echo "Press Ctrl+C to cancel, or Enter to continue..."
-	@read confirm
+	@echo "⚠️ ⚠️ ⚠️  DANGER: DATA DELETION WARNING  ⚠️ ⚠️ ⚠️"
+	@echo ""
+	@echo "This will DELETE ALL DATA in docker-compose volumes:"
+	@echo "  - PostgreSQL databases (ALL environments)"
+	@echo "  - Redis data"
+	@echo "  - Qdrant vector collections"
+	@echo "  - MinIO object storage"
+	@echo "  - All application images"
+	@echo ""
+	@echo "This command only affects shia-chatbot containers."
+	@echo "It will NOT affect other containers on this VPS."
+	@echo ""
+	@read -p "Are you ABSOLUTELY SURE? Type 'yes' to confirm: " confirm; \
+	if [ "$$confirm" != "yes" ]; then \
+		echo "❌ Cancelled - data preserved"; \
+		exit 1; \
+	fi
+	@echo "🗑️  Cleaning docker-compose environment..."
 	$(DOCKER_COMPOSE) down -v --rmi all
 	@echo "✅ Docker environment completely cleaned"
 

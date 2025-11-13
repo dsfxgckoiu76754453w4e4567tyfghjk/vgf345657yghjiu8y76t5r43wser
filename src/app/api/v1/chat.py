@@ -15,6 +15,10 @@ from app.core.langfuse_client import trace_request, trace_span, log_event
 from app.db.base import get_db
 from app.models.user import User
 from app.services.enhanced_chat_service import enhanced_chat_service
+from uuid import uuid4
+from temporalio.client import Client
+from app.core.temporal_client import get_temporal_client
+from app.workflows.chat_workflow import ChatWorkflow, ChatWorkflowInput
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -386,3 +390,101 @@ async def get_cache_stats(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve cache statistics",
         )
+
+
+# ============================================================================
+# ASYNC MODE - Temporal Workflow Execution
+# ============================================================================
+
+class AsyncChatRequest(BaseModel):
+    """Async chat request using Temporal."""
+
+    conversation_id: UUID
+    message: str = Field(..., min_length=1, max_length=10000)
+    model: str | None = None
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    max_tokens: int | None = None
+    enable_caching: bool = True
+
+
+class AsyncChatResponse(BaseModel):
+    """Async chat response."""
+
+    workflow_id: str
+    status: str
+    workflow_url: str
+
+
+@router.post("/async", response_model=AsyncChatResponse)
+async def send_message_async(
+    request_data: AsyncChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Send chat message for async processing using Temporal workflow.
+
+    Returns immediately with workflow ID for status checking.
+    Use GET /api/v1/chat/workflows/{workflow_id} to check status.
+    """
+
+    try:
+        temporal_client = get_temporal_client()
+        workflow_input = ChatWorkflowInput(
+            user_id=str(current_user.id),
+            conversation_id=str(request_data.conversation_id),
+            message=request_data.message,
+            model=request_data.model,
+            temperature=request_data.temperature,
+            max_tokens=request_data.max_tokens,
+            enable_caching=request_data.enable_caching,
+        )
+
+        workflow_id = f"chat-{uuid4()}"
+        handle = await temporal_client.start_workflow(
+            ChatWorkflow.run,
+            workflow_input,
+            id=workflow_id,
+            task_queue=settings.temporal_task_queue,
+        )
+
+        return AsyncChatResponse(
+            workflow_id=workflow_id,
+            status="processing",
+            workflow_url=f"/api/v1/chat/workflows/{workflow_id}",
+        )
+    except Exception as e:
+        logger.error("temporal_workflow_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start workflow: {str(e)}",
+        )
+
+
+@router.get("/workflows/{workflow_id}")
+async def get_workflow_status(
+    workflow_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get Temporal workflow status."""
+    try:
+        temporal_client = get_temporal_client()
+        handle = temporal_client.get_workflow_handle(workflow_id)
+        description = await handle.describe()
+        
+        result = None
+        if description.status.name == "COMPLETED":
+            try:
+                result = await handle.result()
+            except Exception:
+                pass
+        
+        return {
+            "workflow_id": workflow_id,
+            "status": description.status.name,
+            "start_time": description.start_time.isoformat() if description.start_time else None,
+            "history_length": description.history_length,
+            "result": result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
