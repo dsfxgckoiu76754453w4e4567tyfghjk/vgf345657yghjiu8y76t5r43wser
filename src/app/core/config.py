@@ -211,12 +211,22 @@ class Settings(BaseSettings):
     huggingface_token: str | None = Field(default=None)
     huggingface_repo_id: str | None = Field(default=None)
 
-    # Email
+    # Email - SMTP (Legacy/Fallback)
     smtp_host: str = Field(default="smtp.gmail.com")
     smtp_port: int = Field(default=587)
     smtp_user: str | None = Field(default=None)
     smtp_password: str | None = Field(default=None)
     smtp_from_email: str = Field(default="noreply@example.com")
+    smtp_from_name: str = Field(default="WisQu Islamic Chatbot")
+
+    # Email - Mailgun (Recommended)
+    mailgun_api_key: str | None = Field(default=None)
+    mailgun_domain: str | None = Field(default=None)
+    mailgun_from_email: str = Field(default="noreply@wisqu.com")
+    mailgun_from_name: str = Field(default="WisQu Islamic Chatbot")
+
+    # Email Provider Selection
+    email_provider: Literal["smtp", "mailgun"] = Field(default="mailgun")
 
     # Super Admin (for initial setup)
     super_admin_email: str = Field(default="admin@wisqu.com")

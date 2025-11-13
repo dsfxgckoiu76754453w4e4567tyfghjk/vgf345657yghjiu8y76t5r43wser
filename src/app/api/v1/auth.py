@@ -12,6 +12,8 @@ from app.models.user import User
 from app.schemas.auth import (
     EmailVerificationRequest,
     EmailVerificationResponse,
+    GoogleOAuthRequest,
+    GoogleOAuthResponse,
     LogoutResponse,
     PasswordResetConfirmRequest,
     PasswordResetConfirmResponse,
@@ -27,6 +29,7 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.services.auth import AuthService
+from app.services.google_oauth import GoogleOAuthService
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -66,8 +69,8 @@ async def register(
             preferred_language=request_data.preferred_language,
         )
 
-        # TODO: Send email with OTP code
-        logger.info("registration_otp_generated", email=request_data.email, otp_code=otp_code)
+        # OTP email sent automatically by auth_service
+        logger.info("registration_completed", email=request_data.email, user_id=str(user.id))
 
         return UserRegisterResponse(
             message="Registration successful. Please check your email for verification code.",
@@ -274,3 +277,115 @@ async def get_current_user_info(
     Requires valid JWT token.
     """
     return UserResponse.model_validate(current_user)
+
+
+@router.post("/google/auth-code", response_model=GoogleOAuthResponse)
+async def google_oauth_login_with_auth_code(
+    request_data: GoogleOAuthRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> GoogleOAuthResponse:
+    """
+    Google OAuth login (server-side flow with authorization code).
+
+    - **id_token**: Authorization code from Google OAuth flow
+
+    Exchanges authorization code for ID token, then creates/logs in user.
+    Unified account support: If email already exists, links Google OAuth.
+    """
+    google_oauth_service = GoogleOAuthService()
+    auth_service = AuthService(db)
+    ip_address, user_agent = _get_client_info(request)
+
+    try:
+        # Exchange authorization code for user info
+        google_user_info = await google_oauth_service.exchange_auth_code_for_token(
+            authorization_code=request_data.id_token
+        )
+
+        # Login or create user with unified account support
+        user, access_token, refresh_token, is_new_user = await auth_service.google_oauth_login(
+            google_user_info=google_user_info,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        return GoogleOAuthResponse(
+            message="Google OAuth login successful",
+            user=UserResponse.model_validate(user),
+            tokens=TokenResponse(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                expires_in=1800,  # 30 minutes
+            ),
+            is_new_user=is_new_user,
+        )
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error("google_oauth_login_error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Google OAuth authentication failed",
+        )
+
+
+@router.post("/google/id-token", response_model=GoogleOAuthResponse)
+async def google_oauth_login_with_id_token(
+    request_data: GoogleOAuthRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> GoogleOAuthResponse:
+    """
+    Google OAuth login (client-side flow with ID token).
+
+    - **id_token**: Google ID token from client
+
+    Verifies ID token directly, then creates/logs in user.
+    Unified account support: If email already exists, links Google OAuth.
+    """
+    google_oauth_service = GoogleOAuthService()
+    auth_service = AuthService(db)
+    ip_address, user_agent = _get_client_info(request)
+
+    try:
+        # Verify ID token and get user info
+        google_user_info = await google_oauth_service.verify_id_token(token=request_data.id_token)
+
+        # Login or create user with unified account support
+        user, access_token, refresh_token, is_new_user = await auth_service.google_oauth_login(
+            google_user_info=google_user_info,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        return GoogleOAuthResponse(
+            message="Google OAuth login successful",
+            user=UserResponse.model_validate(user),
+            tokens=TokenResponse(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                expires_in=1800,  # 30 minutes
+            ),
+            is_new_user=is_new_user,
+        )
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error("google_oauth_login_error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Google OAuth authentication failed",
+        )
