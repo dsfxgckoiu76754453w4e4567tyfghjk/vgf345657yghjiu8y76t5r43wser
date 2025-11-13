@@ -7,7 +7,7 @@ from uuid import UUID
 
 from minio import Minio
 from minio.error import S3Error
-from minio.lifecycleconfig import LifecycleConfig, Rule, Expiration, Filter
+from minio.lifecycleconfig import LifecycleConfig, Rule, Expiration
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -145,10 +145,9 @@ class MinIOStorageService:
             lifecycle_config = LifecycleConfig(
                 [
                     Rule(
+                        status="Enabled",
                         rule_id=f"delete-after-{days}-days",
-                        rule_filter=Filter(),
                         expiration=Expiration(days=days),
-                        rule_status="Enabled",
                     )
                 ]
             )

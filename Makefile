@@ -10,6 +10,7 @@ DOCKER_COMPOSE := docker compose
 APP_NAME := shia-chatbot
 DOCKER_IMAGE := $(APP_NAME):latest
 SRC_DIR := src/app
+MODULE_NAME := app
 TEST_DIR := tests
 
 # Default target - show help
@@ -45,10 +46,10 @@ setup: install-dev install-hooks docker-up db-upgrade ## Complete project setup 
 # ============================================================================
 
 dev: ## Start development server with hot reload
-	$(POETRY) run uvicorn $(SRC_DIR).main:app --reload --host 0.0.0.0 --port 8000
+	$(POETRY) run uvicorn $(MODULE_NAME).main:app --reload --host 0.0.0.0 --port 8000
 
 dev-docker: docker-up ## Start all services in Docker and run dev server
-	$(POETRY) run uvicorn $(SRC_DIR).main:app --reload --host 0.0.0.0 --port 8000
+	$(POETRY) run uvicorn $(MODULE_NAME).main:app --reload --host 0.0.0.0 --port 8000
 
 shell: ## Open interactive Python shell with app context
 	$(POETRY) run python
@@ -58,16 +59,16 @@ shell: ## Open interactive Python shell with app context
 # ============================================================================
 
 celery-worker: ## Start Celery worker for background tasks
-	$(POETRY) run celery -A $(SRC_DIR).tasks worker --loglevel=info --concurrency=4
+	$(POETRY) run celery -A $(MODULE_NAME).tasks worker --loglevel=info --concurrency=4
 
 celery-beat: ## Start Celery beat scheduler for periodic tasks
-	$(POETRY) run celery -A $(SRC_DIR).tasks beat --loglevel=info
+	$(POETRY) run celery -A $(MODULE_NAME).tasks beat --loglevel=info
 
 celery-worker-dev: ## Start Celery worker in development mode (auto-reload)
-	$(POETRY) run watchmedo auto-restart --directory=./$(SRC_DIR) --pattern=*.py --recursive -- celery -A $(SRC_DIR).tasks worker --loglevel=debug
+	$(POETRY) run watchmedo auto-restart --directory=./$(SRC_DIR) --pattern=*.py --recursive -- celery -A $(MODULE_NAME).tasks worker --loglevel=debug
 
 flower: ## Start Flower (Celery monitoring web UI)
-	$(POETRY) run celery -A $(SRC_DIR).tasks flower --port=5555
+	$(POETRY) run celery -A $(MODULE_NAME).tasks flower --port=5555
 	@echo "📊 Flower UI available at: http://localhost:5555"
 
 celery-purge: ## Purge all Celery tasks from queue (⚠️  Use with caution!)
@@ -75,7 +76,7 @@ celery-purge: ## Purge all Celery tasks from queue (⚠️  Use with caution!)
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		$(POETRY) run celery -A $(SRC_DIR).tasks purge; \
+		$(POETRY) run celery -A $(MODULE_NAME).tasks purge; \
 	else \
 		echo "❌ Operation cancelled"; \
 	fi
@@ -269,7 +270,7 @@ docker-health: ## Check health of all running Docker services
 	@echo -n "DEV App: "
 	@curl -sf http://localhost:8000/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo -n "DEV Celery: "
-	@docker exec shia-chatbot-dev-celery-worker celery -A src.app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@docker exec shia-chatbot-dev-celery-worker celery -A app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
 	@echo -n "DEV Flower: "
 	@curl -sf http://localhost:5555/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo ""
@@ -277,7 +278,7 @@ docker-health: ## Check health of all running Docker services
 	@echo -n "STAGE App: "
 	@curl -sf http://localhost:8001/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo -n "STAGE Celery: "
-	@docker exec shia-chatbot-stage-celery-worker celery -A src.app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@docker exec shia-chatbot-stage-celery-worker celery -A app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
 	@echo -n "STAGE Flower: "
 	@curl -sf http://localhost:5556/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo ""
@@ -285,7 +286,7 @@ docker-health: ## Check health of all running Docker services
 	@echo -n "PROD App: "
 	@curl -sf http://localhost:8002/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo -n "PROD Celery: "
-	@docker exec shia-chatbot-prod-celery-worker celery -A src.app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
+	@docker exec shia-chatbot-prod-celery-worker celery -A app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
 	@echo -n "PROD Flower: "
 	@curl -sf http://localhost:5557/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo ""
@@ -545,7 +546,7 @@ deploy-prod: ## Deploy to production (requires manual confirmation)
 	fi
 
 run-prod: ## Run production server (not for actual production, use docker-compose)
-	$(POETRY) run uvicorn $(SRC_DIR).main:app --host 0.0.0.0 --port 8000 --workers 4
+	$(POETRY) run uvicorn $(MODULE_NAME).main:app --host 0.0.0.0 --port 8000 --workers 4
 
 # ============================================================================
 # Monitoring & Observability

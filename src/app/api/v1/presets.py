@@ -29,7 +29,7 @@ class PresetCreateRequest(BaseModel):
     temperature: float | None = Field(None, ge=0.0, le=2.0, description="Temperature (0.0-2.0)")
     top_p: float | None = Field(None, ge=0.0, le=1.0, description="Top P (0.0-1.0)")
     max_tokens: int | None = Field(None, gt=0, description="Maximum tokens")
-    model_config: dict[str, Any] | None = Field(None, description="Additional model configuration")
+    model_parameters: dict[str, Any] | None = Field(None, description="Additional model configuration")
     provider_preferences: dict[str, Any] | None = Field(None, description="Provider routing preferences")
     is_public: bool = Field(False, description="Make preset publicly shareable")
 
@@ -44,7 +44,7 @@ class PresetUpdateRequest(BaseModel):
     temperature: float | None = Field(None, ge=0.0, le=2.0)
     top_p: float | None = Field(None, ge=0.0, le=1.0)
     max_tokens: int | None = Field(None, gt=0)
-    model_config: dict[str, Any] | None = None
+    model_parameters: dict[str, Any] | None = None
     provider_preferences: dict[str, Any] | None = None
     is_public: bool | None = None
 
@@ -62,7 +62,7 @@ class PresetResponse(BaseModel):
     temperature: float | None
     top_p: float | None
     max_tokens: int | None
-    model_config: str | None
+    model_parameters: str | None
     provider_preferences: str | None
     is_public: bool
     version: int

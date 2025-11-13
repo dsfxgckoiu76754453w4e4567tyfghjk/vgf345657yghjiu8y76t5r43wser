@@ -120,7 +120,7 @@ class StoredFile(Base, EnvironmentPromotionMixin, TimestampMixin, SoftDeleteMixi
     storage_cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True)
 
     # Additional metadata
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    file_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # NOTE: Timestamps (created_at, updated_at) provided by TimestampMixin
     # NOTE: Soft delete fields (deleted_at, is_deleted) provided by SoftDeleteMixin
