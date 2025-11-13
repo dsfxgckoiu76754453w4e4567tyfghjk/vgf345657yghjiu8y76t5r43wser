@@ -21,6 +21,7 @@ from app.core.health import cleanup_health_checker, get_health_status
 from app.core.logging import get_logger, setup_logging
 from app.core.startup import startup_checks
 from app.core.stats import get_application_stats
+from app.core.temporal_client import init_temporal_client, close_temporal_client
 
 # Set up logging
 setup_logging()
@@ -49,10 +50,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if settings.is_production:
             raise
 
+    # Initialize Temporal client (if enabled)
+    if settings.temporal_enabled:
+        try:
+            await init_temporal_client()
+            logger.info("temporal_client_initialized")
+        except Exception as e:
+            logger.error("temporal_initialization_failed", error=str(e))
+            if settings.is_production:
+                raise
+
     yield
 
     # Shutdown
     logger.info("application_shutdown")
+    
+    # Close Temporal client
+    if settings.temporal_enabled:
+        await close_temporal_client()
+
     await cleanup_health_checker()
 
 

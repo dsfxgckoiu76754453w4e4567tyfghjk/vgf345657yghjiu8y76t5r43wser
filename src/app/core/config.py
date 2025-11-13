@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     # Environment
     environment: Literal["dev", "test", "prod"] = Field(default="dev")
 
+    # Temporal Workflow Engine
+    temporal_host: str = Field(default="localhost:7233")
+    temporal_namespace: str = Field(default="default")
+    temporal_task_queue: str = Field(default="chat-queue")
+    temporal_enabled: bool = Field(default=False)  # Enable for hybrid mode
+    
+
     # Application
     app_name: str = Field(default="Shia Islamic Chatbot")
     app_version: str = Field(default="1.0.0")
@@ -34,6 +41,11 @@ class Settings(BaseSettings):
     database_driver: str = Field(default="postgresql+asyncpg")
     database_pool_size: int = Field(default=20)
     database_max_overflow: int = Field(default=10)
+
+    # Database Read Replica (for read scaling)
+    database_read_replica_host: str | None = Field(default=None)  # If None, uses primary
+    database_read_replica_port: int | None = Field(default=None)
+    database_read_replica_enabled: bool = Field(default=False)
 
     # Database - Connection parameters (recommended for production)
     # Note: Individual parameters are always used to build the connection URL
