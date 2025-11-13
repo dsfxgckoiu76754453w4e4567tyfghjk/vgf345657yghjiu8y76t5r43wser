@@ -33,10 +33,10 @@
 
 | Technology | Type | Purpose |
 |------------|------|---------|
-| **OpenRouter** | API | Unified LLM access (100+ models) |
-| **Claude** (Anthropic) | API | Primary LLM provider |
-| **Gemini** (Google) | API | Embeddings & LLM |
-| **GPT** (OpenAI) | API | LLM alternative |
+| **OpenRouter** | API | **Primary LLM provider** - Unified access (100+ models) |
+| **Claude** (Anthropic) | API | LLM via OpenRouter |
+| **Gemini** (Google) | API | Embeddings & LLM via OpenRouter |
+| **GPT** (OpenAI) | API | LLM via OpenRouter |
 | **Cohere** | API | Embeddings & reranking |
 | **LangChain** | SDK | LLM orchestration framework |
 | **LangGraph** | SDK | Multi-agent workflows |
@@ -80,9 +80,8 @@
 
 | Technology | Type | Purpose |
 |------------|------|---------|
-| **Tavily** | API | AI-optimized web search |
-| **Serper** | API | Google Search API |
-| **Perplexity** | API | Search + reasoning (via OpenRouter) |
+| **OpenRouter** | API | **Primary web search** - Perplexity Sonar + search-enabled LLMs |
+| **Serper** | API | Google Search API (alternative) |
 
 ---
 

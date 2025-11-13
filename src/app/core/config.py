@@ -112,8 +112,7 @@ class Settings(BaseSettings):
 
     # Web Search
     web_search_enabled: bool = Field(default=True)
-    web_search_provider: Literal["tavily", "serper", "openrouter"] = Field(default="tavily")
-    tavily_api_key: str | None = Field(default=None)
+    web_search_provider: Literal["serper", "openrouter"] = Field(default="openrouter")
     serper_api_key: str | None = Field(default=None)
     # OpenRouter Search Configuration (when WEB_SEARCH_PROVIDER=openrouter)
     web_search_model: str = Field(default="perplexity/sonar")
