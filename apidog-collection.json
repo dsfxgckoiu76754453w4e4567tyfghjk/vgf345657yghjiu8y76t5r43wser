@@ -1,756 +1,612 @@
 {
-  "openapi": "3.0.0",
   "info": {
-    "title": "WisQu Islamic Chatbot API",
-    "version": "1.0.0",
-    "description": "Production-grade RAG chatbot with OpenRouter, Google OAuth, and advanced AI features",
-    "contact": {
-      "name": "WisQu Support",
-      "email": "support@wisqu.com",
-      "url": "https://wisqu.com"
-    }
+    "name": "WisQu Islamic Chatbot API",
+    "_postman_id": "wisqu-api-collection",
+    "description": "Production-grade RAG chatbot with OpenRouter, Google OAuth, and advanced AI features\n\nFeatures:\n- OpenRouter as primary LLM and web search provider\n- SSE streaming for token-by-token responses\n- 2-stage retrieval (vector search + reranking)\n- Google OAuth with unified accounts\n- Prompt caching and cost optimization",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "servers": [
-    {
-      "url": "http://localhost:8000",
-      "description": "Local Development"
-    },
-    {
-      "url": "https://api.wisqu.com",
-      "description": "Production"
-    }
-  ],
-  "components": {
-    "securitySchemes": {
-      "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
-      }
-    },
-    "schemas": {
-      "User": {
-        "type": "object",
-        "properties": {
-          "id": {"type": "string", "format": "uuid"},
-          "email": {"type": "string", "format": "email"},
-          "name": {"type": "string"},
-          "is_verified": {"type": "boolean"},
-          "subscription_plan": {"type": "string", "enum": ["free", "premium", "unlimited"]}
-        }
-      },
-      "ChatRequest": {
-        "type": "object",
-        "required": ["conversation_id", "message"],
-        "properties": {
-          "conversation_id": {"type": "string", "format": "uuid"},
-          "message": {"type": "string", "minLength": 1, "maxLength": 10000},
-          "model": {"type": "string", "example": "anthropic/claude-3.5-sonnet"},
-          "system_prompt": {"type": "string"},
-          "temperature": {"type": "number", "minimum": 0, "maximum": 2},
-          "max_tokens": {"type": "integer", "minimum": 1},
-          "enable_caching": {"type": "boolean", "default": true},
-          "stream": {"type": "boolean", "default": false},
-          "response_schema": {"type": "object"},
-          "auto_detect_images": {"type": "boolean", "default": true}
-        }
-      },
-      "ChatResponse": {
-        "type": "object",
-        "properties": {
-          "message_id": {"type": "string", "format": "uuid"},
-          "content": {"type": "string"},
-          "model": {"type": "string"},
-          "usage": {
-            "type": "object",
-            "properties": {
-              "prompt_tokens": {"type": "integer"},
-              "completion_tokens": {"type": "integer"},
-              "total_tokens": {"type": "integer"}
-            }
-          },
-          "cached_tokens_read": {"type": "integer"},
-          "cached_tokens_write": {"type": "integer"},
-          "cache_discount_usd": {"type": "number"},
-          "total_cost_usd": {"type": "number"},
-          "fallback_used": {"type": "boolean"},
-          "final_model_used": {"type": "string"},
-          "generated_image": {"type": "object"},
-          "intent_results": {"type": "object"},
-          "langfuse_trace_id": {"type": "string"}
-        }
-      }
-    }
-  },
-  "paths": {
-    "/api/v1/auth/register": {
-      "post": {
-        "tags": ["Authentication"],
-        "summary": "Register with Email/Password",
-        "description": "Create new user account with email verification via OTP",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["email", "password", "name"],
-                "properties": {
-                  "email": {"type": "string", "format": "email"},
-                  "password": {"type": "string", "minLength": 8},
-                  "name": {"type": "string"}
-                }
-              },
-              "example": {
-                "email": "user@example.com",
-                "password": "StrongPass123!",
-                "name": "Ahmed Ali"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Registration successful, OTP sent",
-            "content": {
-              "application/json": {
-                "example": {
-                  "message": "Registration successful. Please verify your email with the OTP sent.",
-                  "user_id": "550e8400-e29b-41d4-a716-446655440000",
-                  "email": "user@example.com"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/verify-otp": {
-      "post": {
-        "tags": ["Authentication"],
-        "summary": "Verify OTP Code",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["email", "otp_code"],
-                "properties": {
-                  "email": {"type": "string", "format": "email"},
-                  "otp_code": {"type": "string", "pattern": "^[0-9]{6}$"}
-                }
-              },
-              "example": {
-                "email": "user@example.com",
-                "otp_code": "123456"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OTP verified, tokens issued",
-            "content": {
-              "application/json": {
-                "example": {
-                  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                  "token_type": "bearer",
-                  "user": {
-                    "id": "550e8400-e29b-41d4-a716-446655440000",
-                    "email": "user@example.com",
-                    "name": "Ahmed Ali",
-                    "is_verified": true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/login": {
-      "post": {
-        "tags": ["Authentication"],
-        "summary": "Login with Email/Password",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["email", "password"],
-                "properties": {
-                  "email": {"type": "string", "format": "email"},
-                  "password": {"type": "string"}
-                }
-              },
-              "example": {
-                "email": "user@example.com",
-                "password": "StrongPass123!"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Login successful",
-            "content": {
-              "application/json": {
-                "example": {
-                  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                  "token_type": "bearer",
-                  "user": {
-                    "id": "550e8400-e29b-41d4-a716-446655440000",
-                    "email": "user@example.com",
-                    "name": "Ahmed Ali",
-                    "subscription_plan": "free"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/google/auth-code": {
-      "post": {
-        "tags": ["Authentication"],
-        "summary": "Google OAuth (Authorization Code)",
-        "description": "Login/register using Google OAuth authorization code. Supports unified accounts - same email = ONE user.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["id_token"],
-                "properties": {
-                  "id_token": {"type": "string"}
-                }
-              },
-              "example": {
-                "id_token": "ya29.a0AfB_byD..."
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Google OAuth successful",
-            "content": {
-              "application/json": {
-                "example": {
-                  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                  "token_type": "bearer",
-                  "is_new_user": false,
-                  "user": {
-                    "id": "550e8400-e29b-41d4-a716-446655440000",
-                    "email": "user@gmail.com",
-                    "name": "Ahmed Ali"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/google/id-token": {
-      "post": {
-        "tags": ["Authentication"],
-        "summary": "Google OAuth (ID Token)",
-        "description": "Login/register using Google OAuth ID token. Alternative to authorization code flow.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["id_token"],
-                "properties": {
-                  "id_token": {"type": "string"}
-                }
-              },
-              "example": {
-                "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6..."
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Google OAuth successful"
-          }
-        }
-      }
-    },
-    "/api/v1/chat/": {
-      "post": {
-        "tags": ["Chat"],
-        "summary": "Send Chat Message",
-        "description": "Send message with optional streaming, image generation, and intent detection",
-        "security": [{"BearerAuth": []}],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {"$ref": "#/components/schemas/ChatRequest"},
-              "examples": {
-                "non-streaming": {
-                  "summary": "Regular Chat (Non-Streaming)",
-                  "value": {
-                    "conversation_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-                    "message": "What are the 5 pillars of Islam?",
-                    "model": "anthropic/claude-3.5-sonnet",
-                    "temperature": 0.7,
-                    "max_tokens": 2048,
-                    "enable_caching": true,
-                    "stream": false
-                  }
-                },
-                "streaming": {
-                  "summary": "SSE Streaming Chat",
-                  "value": {
-                    "conversation_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-                    "message": "Explain the concept of Tawhid",
-                    "stream": true
-                  }
-                },
-                "image-generation": {
-                  "summary": "Image Generation via Intent",
-                  "value": {
-                    "conversation_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-                    "message": "Generate an image of a beautiful mosque at sunset",
-                    "auto_detect_images": true
-                  }
-                },
-                "structured-output": {
-                  "summary": "Structured JSON Output",
-                  "value": {
-                    "conversation_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-                    "message": "Is fasting obligatory in Islam?",
-                    "response_schema": {
-                      "type": "object",
-                      "properties": {
-                        "answer": {"type": "string"},
-                        "ruling": {"type": "string", "enum": ["obligatory", "recommended", "permissible", "disliked", "forbidden"]},
-                        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
-                      },
-                      "required": ["answer", "ruling", "confidence"]
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Chat response (non-streaming) or SSE stream",
-            "content": {
-              "application/json": {
-                "schema": {"$ref": "#/components/schemas/ChatResponse"},
-                "example": {
-                  "message_id": "8d0e7890-8536-51ef-a65c-f18fc2g01bf8",
-                  "content": "The five pillars of Islam are:\n1. Shahada (Faith)\n2. Salah (Prayer)\n3. Zakat (Charity)\n4. Sawm (Fasting)\n5. Hajj (Pilgrimage)",
-                  "model": "anthropic/claude-3.5-sonnet",
-                  "usage": {
-                    "prompt_tokens": 245,
-                    "completion_tokens": 87,
-                    "total_tokens": 332
-                  },
-                  "cached_tokens_read": 150,
-                  "cached_tokens_write": 95,
-                  "cache_discount_usd": 0.00045,
-                  "total_cost_usd": 0.0012
-                }
-              },
-              "text/event-stream": {
-                "schema": {
-                  "type": "string",
-                  "description": "SSE stream with JSON-encoded chunks"
-                },
-                "example": "data: {\"type\": \"content\", \"content\": \"The\"}\n\ndata: {\"type\": \"content\", \"content\": \" five\"}\n\ndata: {\"type\": \"metadata\", \"message_id\": \"...\", \"usage\": {...}}\n\n"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/chat/async": {
-      "post": {
-        "tags": ["Chat"],
-        "summary": "Send Chat Message (Async with Temporal)",
-        "description": "Process chat message asynchronously using Temporal workflow",
-        "security": [{"BearerAuth": []}],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["conversation_id", "message"],
-                "properties": {
-                  "conversation_id": {"type": "string", "format": "uuid"},
-                  "message": {"type": "string"},
-                  "model": {"type": "string"},
-                  "temperature": {"type": "number"},
-                  "max_tokens": {"type": "integer"},
-                  "enable_caching": {"type": "boolean"}
-                }
-              },
-              "example": {
-                "conversation_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-                "message": "Explain the history of Islamic caliphates in detail"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Workflow started",
-            "content": {
-              "application/json": {
-                "example": {
-                  "workflow_id": "chat-7d8e9f10-9647-62fg-b76d-g29gd3h12cg9",
-                  "status": "processing",
-                  "workflow_url": "/api/v1/chat/workflows/chat-7d8e9f10-9647-62fg-b76d-g29gd3h12cg9"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/chat/cache-stats/{conversation_id}": {
-      "get": {
-        "tags": ["Chat"],
-        "summary": "Get Prompt Cache Statistics",
-        "security": [{"BearerAuth": []}],
-        "parameters": [
-          {
-            "name": "conversation_id",
-            "in": "path",
-            "required": true,
-            "schema": {"type": "string", "format": "uuid"}
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Cache statistics",
-            "content": {
-              "application/json": {
-                "example": {
-                  "total_messages": 25,
-                  "cached_messages": 18,
-                  "total_cached_tokens": 12450,
-                  "total_cache_savings_usd": 0.037,
-                  "cache_hit_rate": 0.72
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/conversations/": {
-      "post": {
-        "tags": ["Conversations"],
-        "summary": "Create Conversation",
-        "security": [{"BearerAuth": []}],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "title": {"type": "string"}
-                }
-              },
-              "example": {
-                "title": "Islamic Jurisprudence Discussion"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Conversation created",
-            "content": {
-              "application/json": {
-                "example": {
-                  "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-                  "title": "Islamic Jurisprudence Discussion",
-                  "created_at": "2025-01-13T10:30:00Z",
-                  "message_count": 0
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "tags": ["Conversations"],
-        "summary": "List Conversations",
-        "security": [{"BearerAuth": []}],
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {"type": "integer", "default": 20}
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "schema": {"type": "integer", "default": 0}
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of conversations",
-            "content": {
-              "application/json": {
-                "example": {
-                  "total": 15,
-                  "conversations": [
-                    {
-                      "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-                      "title": "Islamic Jurisprudence Discussion",
-                      "created_at": "2025-01-13T10:30:00Z",
-                      "last_message_at": "2025-01-13T11:45:00Z",
-                      "message_count": 12
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/conversations/{conversation_id}": {
-      "get": {
-        "tags": ["Conversations"],
-        "summary": "Get Conversation",
-        "security": [{"BearerAuth": []}],
-        "parameters": [
-          {
-            "name": "conversation_id",
-            "in": "path",
-            "required": true,
-            "schema": {"type": "string", "format": "uuid"}
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Conversation details with messages"
-          }
-        }
-      },
-      "delete": {
-        "tags": ["Conversations"],
-        "summary": "Delete Conversation",
-        "security": [{"BearerAuth": []}],
-        "parameters": [
-          {
-            "name": "conversation_id",
-            "in": "path",
-            "required": true,
-            "schema": {"type": "string", "format": "uuid"}
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Conversation deleted",
-            "content": {
-              "application/json": {
-                "example": {
-                  "message": "Conversation deleted successfully"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/upload": {
-      "post": {
-        "tags": ["Documents (RAG)"],
-        "summary": "Upload Document",
-        "description": "Upload PDF/TXT/DOCX for RAG indexing with 2-stage retrieval (vector search + reranking)",
-        "security": [{"BearerAuth": []}],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": ["file"],
-                "properties": {
-                  "file": {"type": "string", "format": "binary"},
-                  "title": {"type": "string"},
-                  "category": {"type": "string"}
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Document uploaded and processing",
-            "content": {
-              "application/json": {
-                "example": {
-                  "id": "doc_abc123",
-                  "title": "Sahih Bukhari - Volume 1",
-                  "category": "hadith",
-                  "status": "processing",
-                  "file_size_bytes": 2048576,
-                  "chunks_created": 0
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/search": {
-      "post": {
-        "tags": ["Documents (RAG)"],
-        "summary": "Search Documents (2-Stage Retrieval)",
-        "description": "Vector search (Qdrant) → Reranking (Cohere) for 20-40% quality improvement",
-        "security": [{"BearerAuth": []}],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["query"],
-                "properties": {
-                  "query": {"type": "string"},
-                  "limit": {"type": "integer", "default": 10},
-                  "use_reranker": {"type": "boolean", "default": true}
-                }
-              },
-              "example": {
-                "query": "What does Islam say about charity?",
-                "limit": 10,
-                "use_reranker": true
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Search results with reranking scores",
-            "content": {
-              "application/json": {
-                "example": {
-                  "results": [
-                    {
-                      "chunk_id": "chunk_001",
-                      "document_title": "Quran Translation",
-                      "chunk_text": "...charity is mentioned in Quran 2:177...",
-                      "vector_score": 0.89,
-                      "rerank_score": 0.94,
-                      "metadata": {
-                        "page": 15,
-                        "verse": "2:177"
-                      }
-                    }
-                  ],
-                  "total_results": 10,
-                  "reranking_used": true
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/health": {
-      "get": {
-        "tags": ["Health"],
-        "summary": "API Health Check",
-        "responses": {
-          "200": {
-            "description": "System health status",
-            "content": {
-              "application/json": {
-                "example": {
-                  "status": "healthy",
-                  "version": "1.0.0",
-                  "environment": "production",
-                  "services": {
-                    "database": "connected",
-                    "redis": "connected",
-                    "qdrant": "connected",
-                    "temporal": "connected"
-                  },
-                  "timestamp": "2025-01-13T12:00:00Z"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/stats": {
-      "get": {
-        "tags": ["Admin"],
-        "summary": "Get System Statistics (Admin Only)",
-        "security": [{"BearerAuth": []}],
-        "responses": {
-          "200": {
-            "description": "System statistics",
-            "content": {
-              "application/json": {
-                "example": {
-                  "total_users": 1250,
-                  "total_conversations": 8945,
-                  "total_messages": 42378,
-                  "total_documents": 567,
-                  "active_users_24h": 234,
-                  "cache_hit_rate": 0.68,
-                  "avg_response_time_ms": 450
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "tags": [
+  "item": [
     {
       "name": "Authentication",
-      "description": "Email/password and Google OAuth authentication with unified accounts"
+      "item": [
+        {
+          "name": "Register with Email/Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"StrongPass123!\",\n  \"name\": \"Ahmed Ali\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register"]
+            },
+            "description": "Create new user account with email verification via OTP. OTP code sent via Mailgun (SMTP fallback). 6-digit code valid for 10 minutes."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"otp_code\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/verify-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "verify-otp"]
+            },
+            "description": "Verify OTP code and receive access/refresh tokens"
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"StrongPass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Login with email and password"
+          },
+          "response": []
+        },
+        {
+          "name": "Google OAuth (Authorization Code)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_token\": \"ya29.a0AfB_byD...\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/google/auth-code",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "google", "auth-code"]
+            },
+            "description": "Login/register using Google OAuth authorization code. Supports unified accounts - same email = ONE user."
+          },
+          "response": []
+        },
+        {
+          "name": "Google OAuth (ID Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_token\": \"eyJhbGciOiJSUzI1NiIsImtpZCI6...\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/google/id-token",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "google", "id-token"]
+            },
+            "description": "Login/register using Google OAuth ID token. Alternative to authorization code flow."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/resend-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "resend-otp"]
+            },
+            "description": "Resend OTP verification code"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "description": "Refresh access token using refresh token"
+          },
+          "response": []
+        }
+      ]
     },
     {
       "name": "Chat",
-      "description": "Chat endpoints with SSE streaming, caching, and intent detection"
+      "item": [
+        {
+          "name": "Send Message (Non-Streaming)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message\": \"What are the 5 pillars of Islam?\",\n  \"model\": \"anthropic/claude-3.5-sonnet\",\n  \"temperature\": 0.7,\n  \"max_tokens\": 2048,\n  \"enable_caching\": true,\n  \"stream\": false,\n  \"auto_detect_images\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", ""]
+            },
+            "description": "Send chat message and get complete response. Features: prompt caching, model routing with fallbacks, usage tracking, intent detection (image generation, web search, document search)."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Message (SSE Streaming)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message\": \"Explain the concept of Tawhid\",\n  \"stream\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", ""]
+            },
+            "description": "Send chat message with Server-Sent Events (SSE) streaming. Get token-by-token responses in real-time.\n\nSSE Response Format:\ndata: {\"type\": \"content\", \"content\": \"token\"}\ndata: {\"type\": \"metadata\", \"message_id\": \"...\", \"usage\": {...}}\n\nEnable SSE mode in Apidog to see streaming."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Message (Image Generation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message\": \"Generate an image of a beautiful mosque at sunset\",\n  \"auto_detect_images\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", ""]
+            },
+            "description": "Send message with automatic image generation via intent detection. Response includes generated_image field with URL."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Message (Structured Output)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message\": \"Is fasting obligatory in Islam?\",\n  \"response_schema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"answer\": {\"type\": \"string\"},\n      \"ruling\": {\n        \"type\": \"string\",\n        \"enum\": [\"obligatory\", \"recommended\", \"permissible\", \"disliked\", \"forbidden\"]\n      },\n      \"confidence\": {\"type\": \"number\", \"minimum\": 0, \"maximum\": 1},\n      \"sources\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}\n    },\n    \"required\": [\"answer\", \"ruling\", \"confidence\"]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/structured",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", "structured"]
+            },
+            "description": "Send message with JSON schema validation for structured output"
+          },
+          "response": []
+        },
+        {
+          "name": "Send Message (Async - Temporal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message\": \"Explain the history of Islamic caliphates in detail\",\n  \"model\": \"anthropic/claude-3.5-sonnet\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/async",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", "async"]
+            },
+            "description": "Process chat message asynchronously using Temporal workflow. Returns workflow_id for status checking."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Workflow Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/workflows/:workflow_id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", "workflows", ":workflow_id"],
+              "variable": [
+                {
+                  "key": "workflow_id",
+                  "value": "chat-7d8e9f10-9647-62fg-b76d-g29gd3h12cg9"
+                }
+              ]
+            },
+            "description": "Check status of async Temporal workflow"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Cache Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/cache-stats/:conversation_id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", "cache-stats", ":conversation_id"],
+              "variable": [
+                {
+                  "key": "conversation_id",
+                  "value": "{{conversation_id}}"
+                }
+              ]
+            },
+            "description": "Get prompt caching statistics for a conversation (cache hit rate, savings, etc.)"
+          },
+          "response": []
+        }
+      ]
     },
     {
       "name": "Conversations",
-      "description": "Manage conversation threads"
+      "item": [
+        {
+          "name": "Create Conversation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Islamic Jurisprudence Discussion\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", ""]
+            },
+            "description": "Create a new conversation"
+          },
+          "response": []
+        },
+        {
+          "name": "List Conversations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", ""],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "List user's conversations with pagination"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Conversation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/:conversation_id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", ":conversation_id"],
+              "variable": [
+                {
+                  "key": "conversation_id",
+                  "value": "{{conversation_id}}"
+                }
+              ]
+            },
+            "description": "Get conversation details with all messages"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Conversation",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/:conversation_id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", ":conversation_id"],
+              "variable": [
+                {
+                  "key": "conversation_id",
+                  "value": "{{conversation_id}}"
+                }
+              ]
+            },
+            "description": "Delete a conversation and all its messages"
+          },
+          "response": []
+        }
+      ]
     },
     {
       "name": "Documents (RAG)",
-      "description": "Upload and search documents with 2-stage retrieval (vector + reranking)"
+      "item": [
+        {
+          "name": "Upload Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "title",
+                  "value": "Sahih Bukhari - Volume 1",
+                  "type": "text"
+                },
+                {
+                  "key": "category",
+                  "value": "hadith",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/documents/upload",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "documents", "upload"]
+            },
+            "description": "Upload PDF/TXT/DOCX for RAG indexing. Document will be chunked using semantic chunking and embedded with Gemini."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Documents (2-Stage Retrieval)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"What does Islam say about charity?\",\n  \"limit\": 10,\n  \"use_reranker\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/documents/search",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "documents", "search"]
+            },
+            "description": "Search documents using 2-stage retrieval:\n1. Stage 1: Vector search (Qdrant) retrieves candidates\n2. Stage 2: Reranking (Cohere) refines results\n\nProvides 20-40% quality improvement over single-stage search."
+          },
+          "response": []
+        }
+      ]
     },
     {
-      "name": "Health",
-      "description": "System health checks"
+      "name": "Health & Admin",
+      "item": [
+        {
+          "name": "API Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Check API health and service connectivity (database, redis, qdrant, temporal)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get System Statistics (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "stats"]
+            },
+            "description": "Get system statistics (admin only): total users, conversations, messages, documents, cache hit rate, etc."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
     },
     {
-      "name": "Admin",
-      "description": "Admin-only endpoints"
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "conversation_id",
+      "value": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "type": "string"
     }
   ]
 }
