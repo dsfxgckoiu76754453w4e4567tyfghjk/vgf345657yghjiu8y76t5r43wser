@@ -1,59 +1,27 @@
 version: '3.8'
 
 # ============================================================================
-# PRODUCTION ENVIRONMENT - Live Production System
+# PRODUCTION ENVIRONMENT - Live Service for Real Users
 # ============================================================================
 #
-# ⚠️ ⚠️ ⚠️  CRITICAL WARNING - READ BEFORE DEPLOYMENT  ⚠️ ⚠️ ⚠️
+# ⚠️  CRITICAL: All environments run on the SAME VPS with other prod services!
 #
-# THIS VPS HOSTS OTHER PRODUCTION CONTAINERS WITH REAL USERS!
+# Before deployment:
+#   1. docker ps -a (check no conflicts)
+#   2. Verify port 8002 is available
+#   3. Check system resources
 #
-# Before running ANY production commands:
-# 1. CHECK running containers: docker ps -a
-# 2. CHECK container names to avoid conflicts
-# 3. CHECK port bindings to avoid collisions
-# 4. VERIFY resource limits won't affect other services
-# 5. USE container-specific commands, NOT docker system prune!
-#
-# NEVER run destructive commands:
-# ❌ docker system prune -a (will delete other prod containers!)
-# ❌ docker volume prune (will delete other prod data!)
-# ❌ docker network prune (will affect other services!)
-#
-# ALWAYS use specific container/volume names:
-# ✅ docker stop shia-chatbot-prod-app
-# ✅ docker rm shia-chatbot-prod-app
-# ✅ docker volume rm shia-chatbot-postgres_data
-#
-# ⚠️ ⚠️ ⚠️  BE EXTREMELY CAREFUL - OTHER USERS DEPEND ON THIS VPS!  ⚠️ ⚠️ ⚠️
-#
-# ============================================================================
-#
-# Purpose: Production environment for real users
-# Environment: ENVIRONMENT=prod
-# Container Prefix: shia-chatbot-prod-*
+# Container: shia-chatbot-prod-app
+# Port: 8002
+# Database: shia_chatbot_prod (isolated)
+# Redis DB: 2 (isolated)
 #
 # Usage:
-#   docker compose -f docker-compose.base.yml -f docker-compose.app.prod.yml up --build -d
+#   docker compose -f docker-compose.base.yml -f docker-compose.app.prod.yml up -d
 #
-#   Or use Makefile:
-#   make docker-prod
-#
-# This file EXTENDS docker-compose.base.yml and adds application services.
-# Isolated from DEV/STAGE with separate containers, networks, and volumes.
-#
-# PRODUCTION CONFIGURATION:
-# - Debug mode disabled
-# - Higher resource limits
-# - More workers for better performance
-# - Warning-level logging
-# - Production-grade security settings
 # ============================================================================
 
 services:
-  # ==========================================================================
-  # FASTAPI APPLICATION
-  # ==========================================================================
   app:
     build:
       context: .
@@ -62,70 +30,54 @@ services:
         - ENVIRONMENT=prod
     image: shia-chatbot:prod
     container_name: shia-chatbot-prod-app
-    command: uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --workers 4 --no-access-log
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
     ports:
-      - "8002:8000"  # Different external port to avoid conflict with DEV/STAGE
-    # Note: In production, source code is NOT mounted (security)
+      - "8002:8000"
     env_file:
-      - .env.prod  # Use production-specific env file
+      - .env.prod
     environment:
-      # ======================================================================
-      # ENVIRONMENT ISOLATION - PRODUCTION
-      # ======================================================================
+      # Environment
       - ENVIRONMENT=prod
+      - DEBUG=false
+      - LOG_LEVEL=WARNING
 
-      # ======================================================================
-      # PostgreSQL Configuration (Clean Multi-Parameter)
-      # ======================================================================
-      # TRUE ISOLATION: Separate database for PROD environment
+      # PostgreSQL (isolated: shia_chatbot_prod)
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_NAME=shia_chatbot_prod
       - DATABASE_USER=${POSTGRES_USER:-postgres}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD}
       - DATABASE_DRIVER=postgresql+asyncpg
-      - DATABASE_POOL_SIZE=20
-      - DATABASE_MAX_OVERFLOW=40
 
-      # ======================================================================
-      # Redis Configuration (Clean Multi-Parameter)
-      # ======================================================================
-      # TRUE ISOLATION: Separate database number for PROD (db 2)
+      # Redis (isolated: db 2)
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=2
-      - REDIS_PASSWORD=
-      - REDIS_MAX_CONNECTIONS=100
 
-      # ======================================================================
-      # Qdrant Configuration (Clean Multi-Parameter)
-      # ======================================================================
-      # TRUE ISOLATION: Separate collection prefix for PROD (prod_*)
+      # Qdrant (isolated: prod_ prefix)
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - QDRANT_GRPC_PORT=6334
       - QDRANT_COLLECTION_PREFIX=prod_
-      - QDRANT_API_KEY=
 
-      # ======================================================================
-      # MinIO Configuration (Clean Multi-Parameter)
-      # ======================================================================
-      # TRUE ISOLATION: Separate bucket prefix for PROD (prod-*)
+      # MinIO (isolated: prod- prefix)
       - MINIO_HOST=minio
       - MINIO_PORT=9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
       - MINIO_BUCKET_PREFIX=prod-
-      - MINIO_SECURE=true
-      - MINIO_REGION=us-east-1
+      - MINIO_SECURE=false
 
-      # ======================================================================
-      # Application Configuration (Production)
-      # ======================================================================
-      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
-      - DEBUG=false
-      - CORS_ORIGINS=${CORS_ORIGINS:-https://yourdomain.com}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-yourdomain.com}
+      # Temporal
+      - TEMPORAL_HOST=temporal
+      - TEMPORAL_PORT=7233
+      - TEMPORAL_NAMESPACE=default
+      - TEMPORAL_TASK_QUEUE=wisqu-prod-queue
+      - TEMPORAL_ENABLED=true
+
+      # API
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+
     networks:
       - chatbot-network
     depends_on:
@@ -135,176 +87,20 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      temporal:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
-    restart: always  # Always restart in production
-    deploy:
-      resources:
-        limits:
-          cpus: '4.0'
-          memory: 4G
-        reservations:
-          cpus: '2.0'
-          memory: 2G
-
-  # ==========================================================================
-  # CELERY WORKER - Background Task Processing
-  # ==========================================================================
-  celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - ENVIRONMENT=prod
-    image: shia-chatbot:prod
-    container_name: shia-chatbot-prod-celery-worker
-    command: celery -A app.tasks worker --loglevel=warning --concurrency=8
-    env_file:
-      - .env.prod
-    environment:
-      - ENVIRONMENT=prod
-      - DATABASE_HOST=postgres
-      - DATABASE_PORT=5432
-      - DATABASE_NAME=shia_chatbot_prod
-      - DATABASE_USER=${POSTGRES_USER:-postgres}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - DATABASE_DRIVER=postgresql+asyncpg
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=2
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - QDRANT_COLLECTION_PREFIX=prod_
-      - MINIO_HOST=minio
-      - MINIO_PORT=9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - MINIO_BUCKET_PREFIX=prod-
-      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
-    networks:
-      - chatbot-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      app:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A app.tasks inspect ping -d celery@$$HOSTNAME"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '4.0'
-          memory: 4G
-        reservations:
-          cpus: '2.0'
-          memory: 2G
-
-  # ==========================================================================
-  # CELERY BEAT - Periodic Task Scheduler
-  # ==========================================================================
-  celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - ENVIRONMENT=prod
-    image: shia-chatbot:prod
-    container_name: shia-chatbot-prod-celery-beat
-    command: celery -A app.tasks beat --loglevel=warning
-    env_file:
-      - .env.prod
-    environment:
-      - ENVIRONMENT=prod
-      - DATABASE_HOST=postgres
-      - DATABASE_PORT=5432
-      - DATABASE_NAME=shia_chatbot_prod
-      - DATABASE_USER=${POSTGRES_USER:-postgres}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=2
-      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
-    volumes:
-      - celery_beat_schedule:/app/celerybeat-schedule
-    networks:
-      - chatbot-network
-    depends_on:
-      redis:
-        condition: service_healthy
-      celery-worker:
-        condition: service_healthy
-    restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 512M
-
-  # ==========================================================================
-  # FLOWER - Celery Monitoring Dashboard
-  # ==========================================================================
-  flower:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - ENVIRONMENT=prod
-    image: shia-chatbot:prod
-    container_name: shia-chatbot-prod-flower
-    command: celery -A app.tasks flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
-    ports:
-      - "5557:5555"  # Different external port to avoid conflict with DEV/STAGE
-    env_file:
-      - .env.prod
-    environment:
-      - ENVIRONMENT=prod
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=2
-      - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
-      - FLOWER_URL_PREFIX=${FLOWER_URL_PREFIX:-/flower}
-    networks:
-      - chatbot-network
-    depends_on:
-      redis:
-        condition: service_healthy
-      celery-worker:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5555/healthcheck"]
-      interval: 30s
-      timeout: 10s
       retries: 3
-      start_period: 30s
-    restart: always
+      start_period: 40s
+    restart: unless-stopped
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 1G
+          cpus: '4.0'
+          memory: 4G
         reservations:
-          cpus: '0.25'
-          memory: 512M
-
-# ============================================================================
-# PRODUCTION-SPECIFIC VOLUMES
-# ============================================================================
-volumes:
-  celery_beat_schedule:
-    name: shia-chatbot-prod-celery-beat-schedule
-
-# Note: All infrastructure volumes are inherited from docker-compose.base.yml
+          cpus: '2.0'
+          memory: 2G

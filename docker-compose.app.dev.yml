@@ -1,26 +1,23 @@
 version: '3.8'
 
 # ============================================================================
-# DEV ENVIRONMENT - Internal Team Development Releases
+# DEV ENVIRONMENT - Internal Team Development & Testing
 # ============================================================================
 #
-# Purpose: Frontend team testing with latest backend updates
-# Environment: ENVIRONMENT=dev
-# Container Prefix: shia-chatbot-dev-*
+# All environments (dev/stage/prod) run on the SAME VPS.
+# Use this when: Deploying backend for frontend team + QA testing
+#
+# Container: shia-chatbot-dev-app
+# Port: 8000
+# Database: shia_chatbot_dev (isolated)
+# Redis DB: 0 (isolated)
 #
 # Usage:
-#   docker compose -f docker-compose.base.yml -f docker-compose.app.dev.yml up --build -d
+#   docker compose -f docker-compose.base.yml -f docker-compose.app.dev.yml up -d
 #
-#   Or use Makefile:
-#   make docker-dev
-#
-# This file EXTENDS docker-compose.base.yml and adds application services.
 # ============================================================================
 
 services:
-  # ==========================================================================
-  # FASTAPI APPLICATION
-  # ==========================================================================
   app:
     build:
       context: .
@@ -29,73 +26,54 @@ services:
         - ENVIRONMENT=dev
     image: shia-chatbot:dev
     container_name: shia-chatbot-dev-app
-    command: uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     ports:
       - "8000:8000"
-    volumes:
-      # Mount source code in read-only mode for security
-      - ./src:/app/src:ro
-      - ./alembic:/app/alembic:ro
     env_file:
       - .env
     environment:
-      # ======================================================================
-      # ENVIRONMENT ISOLATION - DEV
-      # ======================================================================
+      # Environment
       - ENVIRONMENT=dev
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
 
-      # ======================================================================
-      # PostgreSQL Configuration (Clean Multi-Parameter)
-      # ======================================================================
-      # TRUE ISOLATION: Separate database for DEV environment
+      # PostgreSQL (isolated: shia_chatbot_dev)
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_NAME=shia_chatbot_dev
       - DATABASE_USER=${POSTGRES_USER:-postgres}
       - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - DATABASE_DRIVER=postgresql+asyncpg
-      - DATABASE_POOL_SIZE=10
-      - DATABASE_MAX_OVERFLOW=20
 
-      # ======================================================================
-      # Redis Configuration (Clean Multi-Parameter)
-      # ======================================================================
-      # TRUE ISOLATION: Separate database number for DEV (db 0)
+      # Redis (isolated: db 0)
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - REDIS_PASSWORD=
-      - REDIS_MAX_CONNECTIONS=50
 
-      # ======================================================================
-      # Qdrant Configuration (Clean Multi-Parameter)
-      # ======================================================================
-      # TRUE ISOLATION: Separate collection prefix for DEV (dev_*)
+      # Qdrant (isolated: dev_ prefix)
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - QDRANT_GRPC_PORT=6334
       - QDRANT_COLLECTION_PREFIX=dev_
-      - QDRANT_API_KEY=
 
-      # ======================================================================
-      # MinIO Configuration (Clean Multi-Parameter)
-      # ======================================================================
-      # TRUE ISOLATION: Separate bucket prefix for DEV (dev-*)
+      # MinIO (isolated: dev- prefix)
       - MINIO_HOST=minio
       - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_BUCKET_PREFIX=dev-
       - MINIO_SECURE=false
-      - MINIO_REGION=us-east-1
 
-      # ======================================================================
-      # Application Configuration
-      # ======================================================================
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-      - DEBUG=true
+      # Temporal
+      - TEMPORAL_HOST=temporal
+      - TEMPORAL_PORT=7233
+      - TEMPORAL_NAMESPACE=default
+      - TEMPORAL_TASK_QUEUE=wisqu-dev-queue
+      - TEMPORAL_ENABLED=true
+
+      # API
       - CORS_ORIGINS=*
       - ALLOWED_HOSTS=*
+
     networks:
       - chatbot-network
     depends_on:
@@ -105,6 +83,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      temporal:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -120,171 +100,3 @@ services:
         reservations:
           cpus: '1.0'
           memory: 1G
-
-  # ==========================================================================
-  # CELERY WORKER - Background Task Processing
-  # ==========================================================================
-  celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - ENVIRONMENT=dev
-    image: shia-chatbot:dev
-    container_name: shia-chatbot-dev-celery-worker
-    command: celery -A app.tasks worker --loglevel=debug --concurrency=4
-    env_file:
-      - .env
-    environment:
-      # Environment
-      - ENVIRONMENT=dev
-
-      # PostgreSQL (DEV database)
-      - DATABASE_HOST=postgres
-      - DATABASE_PORT=5432
-      - DATABASE_NAME=shia_chatbot_dev
-      - DATABASE_USER=${POSTGRES_USER:-postgres}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - DATABASE_DRIVER=postgresql+asyncpg
-
-      # Redis (DEV db 0)
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
-
-      # Qdrant (DEV collections: dev_*)
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - QDRANT_COLLECTION_PREFIX=dev_
-
-      # MinIO (DEV buckets: dev-*)
-      - MINIO_HOST=minio
-      - MINIO_PORT=9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - MINIO_BUCKET_PREFIX=dev-
-
-      # Logging
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-    networks:
-      - chatbot-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      app:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A app.tasks inspect ping -d celery@$$HOSTNAME"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '1.0'
-          memory: 512M
-
-  # ==========================================================================
-  # CELERY BEAT - Periodic Task Scheduler
-  # ==========================================================================
-  celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - ENVIRONMENT=dev
-    image: shia-chatbot:dev
-    container_name: shia-chatbot-dev-celery-beat
-    command: celery -A app.tasks beat --loglevel=debug
-    env_file:
-      - .env
-    environment:
-      - ENVIRONMENT=dev
-      - DATABASE_HOST=postgres
-      - DATABASE_PORT=5432
-      - DATABASE_NAME=shia_chatbot_dev
-      - DATABASE_USER=${POSTGRES_USER:-postgres}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-    volumes:
-      - celery_beat_schedule:/app/celerybeat-schedule
-    networks:
-      - chatbot-network
-    depends_on:
-      redis:
-        condition: service_healthy
-      celery-worker:
-        condition: service_healthy
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.1'
-          memory: 256M
-
-  # ==========================================================================
-  # FLOWER - Celery Monitoring Dashboard
-  # ==========================================================================
-  flower:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - ENVIRONMENT=dev
-    image: shia-chatbot:dev
-    container_name: shia-chatbot-dev-flower
-    command: celery -A app.tasks flower --port=5555
-    ports:
-      - "5555:5555"
-    env_file:
-      - .env
-    environment:
-      - ENVIRONMENT=dev
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
-      - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
-    networks:
-      - chatbot-network
-    depends_on:
-      redis:
-        condition: service_healthy
-      celery-worker:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5555/healthcheck"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.1'
-          memory: 256M
-
-# ============================================================================
-# DEV-SPECIFIC VOLUMES
-# ============================================================================
-volumes:
-  celery_beat_schedule:
-    name: shia-chatbot-dev-celery-beat-schedule
-
-# Note: All infrastructure volumes are inherited from docker-compose.base.yml

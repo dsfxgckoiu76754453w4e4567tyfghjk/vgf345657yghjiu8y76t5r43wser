@@ -1,7 +1,7 @@
 # Shia Islamic Chatbot - Makefile
 # Comprehensive build automation for production-grade Shia Islamic chatbot
 
-.PHONY: help install dev test lint clean docker-up docker-down docker-build docker-ps docker-health docker-clean docker-clean-all docker-backup db-migrate db-upgrade db-downgrade format security deploy celery flower minio-ui docs verify-build test-local
+.PHONY: help install dev test lint clean docker-up docker-down docker-build docker-ps docker-health docker-clean docker-clean-all docker-backup db-migrate db-upgrade db-downgrade format security deploy temporal-ui minio-ui docs verify-build test-local
 
 # Variables
 PYTHON := python3
@@ -55,84 +55,17 @@ shell: ## Open interactive Python shell with app context
 	$(POETRY) run python
 
 # ============================================================================
-# Celery & Background Tasks (Official Best Practices)
+# Temporal Workflows - Async Task Processing
 # ============================================================================
 #
-# Production deployment uses priority-based workers (recommended):
-#   make celery-worker-high    - High priority queue (chat, images, asr)
-#   make celery-worker-medium  - Medium priority queue (embeddings, storage)
-#   make celery-worker-low     - Low priority queue (email, cleanup)
-#   make celery-beat           - Periodic task scheduler
-#
-# Development uses single worker for all queues:
-#   make celery-worker-dev     - All queues (development only)
+# Temporal handles all async background processing (replaces Celery)
+# Temporal UI is available at: http://localhost:8233
 #
 # ============================================================================
 
-# Production Workers (Priority-Based)
-celery-worker-high: ## Start HIGH priority worker (production)
-	@chmod +x scripts/celery/start_worker_high_priority.sh
-	@scripts/celery/start_worker_high_priority.sh
-
-celery-worker-medium: ## Start MEDIUM priority worker (production)
-	@chmod +x scripts/celery/start_worker_medium_priority.sh
-	@scripts/celery/start_worker_medium_priority.sh
-
-celery-worker-low: ## Start LOW priority worker (production)
-	@chmod +x scripts/celery/start_worker_low_priority.sh
-	@scripts/celery/start_worker_low_priority.sh
-
-celery-worker-all-prod: ## Start ALL priority workers (production)
-	@echo "🚀 Starting all priority workers..."
-	@chmod +x scripts/celery/*.sh
-	@scripts/celery/start_worker_high_priority.sh &
-	@scripts/celery/start_worker_medium_priority.sh &
-	@scripts/celery/start_worker_low_priority.sh &
-	@echo "✅ All priority workers started in background"
-
-# Beat Scheduler
-celery-beat: ## Start Celery beat scheduler for periodic tasks
-	@chmod +x scripts/celery/start_beat.sh
-	@scripts/celery/start_beat.sh
-
-# Development Workers
-celery-worker: celery-worker-dev ## Alias for celery-worker-dev
-
-celery-worker-dev: ## Start Celery worker (all queues - development only)
-	@chmod +x scripts/celery/start_worker_all_queues.sh
-	@scripts/celery/start_worker_all_queues.sh
-
-celery-worker-dev-reload: ## Start Celery worker with auto-reload (development)
-	$(POETRY) run watchmedo auto-restart --directory=./$(SRC_DIR) --pattern=*.py --recursive -- celery -A $(MODULE_NAME).tasks worker --loglevel=debug
-
-# Monitoring
-flower: ## Start Flower (Celery monitoring web UI)
-	$(POETRY) run celery -A $(MODULE_NAME).tasks flower --port=5555
-	@echo "📊 Flower UI available at: http://localhost:5555"
-
-# Management Commands
-celery-inspect: ## Inspect active workers and queues
-	@echo "Active Workers:"
-	@$(POETRY) run celery -A $(MODULE_NAME).tasks inspect active || echo "No workers running"
-	@echo ""
-	@echo "Registered Tasks:"
-	@$(POETRY) run celery -A $(MODULE_NAME).tasks inspect registered || echo "No workers running"
-	@echo ""
-	@echo "Active Queues:"
-	@$(POETRY) run celery -A $(MODULE_NAME).tasks inspect active_queues || echo "No workers running"
-
-celery-stats: ## Show Celery worker statistics
-	$(POETRY) run celery -A $(MODULE_NAME).tasks inspect stats
-
-celery-purge: ## Purge all Celery tasks from queue (⚠️  Use with caution!)
-	@echo "⚠️  WARNING: This will DELETE ALL pending tasks!"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		$(POETRY) run celery -A $(MODULE_NAME).tasks purge; \
-	else \
-		echo "❌ Operation cancelled"; \
-	fi
+temporal-ui: ## Open Temporal Web UI
+	@echo "📊 Temporal UI: http://localhost:8233"
+	@open http://localhost:8233 || xdg-open http://localhost:8233 || echo "Navigate to http://localhost:8233"
 
 # ============================================================================
 # Docker Operations - New Optimized Architecture

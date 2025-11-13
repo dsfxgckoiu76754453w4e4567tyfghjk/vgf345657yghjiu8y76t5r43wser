@@ -393,93 +393,71 @@ async def get_cache_stats(
 
 
 # ============================================================================
-# HYBRID MODE - Celery + Temporal Support
+# ASYNC MODE - Temporal Workflow Execution
 # ============================================================================
 
-class HybridChatRequest(BaseModel):
-    """Hybrid chat request (Celery or Temporal)."""
-    
+class AsyncChatRequest(BaseModel):
+    """Async chat request using Temporal."""
+
     conversation_id: UUID
     message: str = Field(..., min_length=1, max_length=10000)
     model: str | None = None
     temperature: float | None = Field(None, ge=0.0, le=2.0)
     max_tokens: int | None = None
     enable_caching: bool = True
-    use_temporal: bool | None = None
 
 
-class HybridChatResponse(BaseModel):
-    """Hybrid chat response."""
-    
-    job_id: str
+class AsyncChatResponse(BaseModel):
+    """Async chat response."""
+
+    workflow_id: str
     status: str
-    execution_type: str
-    response: str | None = None
-    workflow_url: str | None = None
+    workflow_url: str
 
 
-@router.post("/hybrid", response_model=HybridChatResponse)
-async def send_message_hybrid(
-    request_data: HybridChatRequest,
+@router.post("/async", response_model=AsyncChatResponse)
+async def send_message_async(
+    request_data: AsyncChatRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Hybrid chat endpoint supporting both Celery and Temporal."""
-    
-    use_temporal = request_data.use_temporal if request_data.use_temporal is not None else settings.temporal_enabled
-    
-    if use_temporal:
-        try:
-            temporal_client = get_temporal_client()
-            workflow_input = ChatWorkflowInput(
-                user_id=str(current_user.id),
-                conversation_id=str(request_data.conversation_id),
-                message=request_data.message,
-                model=request_data.model,
-                temperature=request_data.temperature,
-                max_tokens=request_data.max_tokens,
-                enable_caching=request_data.enable_caching,
-            )
-            
-            workflow_id = f"chat-{uuid4()}"
-            handle = await temporal_client.start_workflow(
-                ChatWorkflow.run,
-                workflow_input,
-                id=workflow_id,
-                task_queue=settings.temporal_task_queue,
-            )
-            
-            return HybridChatResponse(
-                job_id=workflow_id,
-                status="processing",
-                execution_type="temporal",
-                workflow_url=f"/api/v1/chat/workflows/{workflow_id}",
-            )
-        except Exception as e:
-            logger.error("temporal_workflow_failed", error=str(e))
-            use_temporal = False
-    
-    if not use_temporal:
-        from app.tasks.chat import process_chat_message
-        
-        result = process_chat_message.apply_async(
-            kwargs={
-                "user_id": str(current_user.id),
-                "conversation_id": str(request_data.conversation_id),
-                "message_content": request_data.message,
-                "model": request_data.model,
-                "temperature": request_data.temperature,
-                "max_tokens": request_data.max_tokens,
-                "enable_caching": request_data.enable_caching,
-            },
-            queue="high_priority",
+    """
+    Send chat message for async processing using Temporal workflow.
+
+    Returns immediately with workflow ID for status checking.
+    Use GET /api/v1/chat/workflows/{workflow_id} to check status.
+    """
+
+    try:
+        temporal_client = get_temporal_client()
+        workflow_input = ChatWorkflowInput(
+            user_id=str(current_user.id),
+            conversation_id=str(request_data.conversation_id),
+            message=request_data.message,
+            model=request_data.model,
+            temperature=request_data.temperature,
+            max_tokens=request_data.max_tokens,
+            enable_caching=request_data.enable_caching,
         )
-        
-        return HybridChatResponse(
-            job_id=result.id,
+
+        workflow_id = f"chat-{uuid4()}"
+        handle = await temporal_client.start_workflow(
+            ChatWorkflow.run,
+            workflow_input,
+            id=workflow_id,
+            task_queue=settings.temporal_task_queue,
+        )
+
+        return AsyncChatResponse(
+            workflow_id=workflow_id,
             status="processing",
-            execution_type="celery",
-            workflow_url=f"/api/v1/jobs/{result.id}",
+            workflow_url=f"/api/v1/chat/workflows/{workflow_id}",
+        )
+    except Exception as e:
+        logger.error("temporal_workflow_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start workflow: {str(e)}",
         )
 
 

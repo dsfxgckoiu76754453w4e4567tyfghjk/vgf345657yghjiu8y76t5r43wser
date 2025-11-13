@@ -54,11 +54,7 @@ qdrant-client = ">=1.11.0"
 # Caching & Queue
 redis = "^5.0.0"
 redis-om = "^0.3.0"
-celery = {extras = ["redis"], version = "^5.4.0"}
-flower = "^2.0.0"
-celery-progress = "^0.4.0"
-temporalio = "^1.5.0"  # Workflow orchestration for complex RAG pipelines
-kombu = "^5.4.0"
+temporalio = "^1.5.0"  # Workflow orchestration for async task processing
 
 # Object Storage
 minio = "^7.2.0"
