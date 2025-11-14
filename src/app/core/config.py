@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     # Temporal Workflow Engine
     temporal_host: str = Field(default="localhost:7233")
     temporal_namespace: str = Field(default="default")
-    temporal_task_queue: str = Field(default="chat-queue")
-    temporal_enabled: bool = Field(default=False)  # Enable for hybrid mode
+    temporal_task_queue: str = Field(default="wisqu-local-queue")  # Environment-specific
+    temporal_enabled: bool = Field(default=True)  # Enable for workflow orchestration
     
 
     # Application
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     database_port: int = Field(default=5433)
     database_user: str = Field(default="postgres")
     database_password: str = Field(default="postgres")
-    database_name: str = Field(default="shia_chatbot")
+    database_name: str = Field(default="shia_chatbot_local")  # Environment-specific
     database_driver: str = Field(default="postgresql+asyncpg")
     database_pool_size: int = Field(default=20)
     database_max_overflow: int = Field(default=10)
@@ -52,16 +52,15 @@ class Settings(BaseSettings):
     # Note: Individual parameters are always used to build the connection URL
     # This ensures better security and configuration management
 
-    # Redis
-    redis_url: str = Field(default="redis://localhost:6379/0")
-    redis_cache_db: int = Field(default=1)
-    redis_queue_db: int = Field(default=2)
+    # Redis (Single dedicated DB per environment)
+    # LOCAL: DB 3, DEV: DB 0, STAGE: DB 1, PROD: DB 2
+    redis_url: str = Field(default="redis://localhost:6379/3")
 
     # Qdrant
     qdrant_url: str = Field(default="http://localhost:6333")
     qdrant_api_key: str | None = Field(default=None)
     qdrant_collection_name: str = Field(default="islamic_knowledge")
-    qdrant_collection_prefix: str = Field(default="")  # Environment prefix (e.g., "dev_", "prod_")
+    qdrant_collection_prefix: str = Field(default="local_")  # Environment prefix: local_, dev_, stage_, prod_
 
     # JWT & Security
     jwt_secret_key: str = Field(default="change-in-production")
@@ -237,7 +236,7 @@ class Settings(BaseSettings):
     minio_secure: bool = Field(default=False)  # True for HTTPS
     minio_region: str = Field(default="us-east-1")
     minio_public_url: str = Field(default="http://localhost:9000")  # For public URLs
-    minio_bucket_prefix: str = Field(default="")  # Environment prefix (e.g., "dev-", "prod-")
+    minio_bucket_prefix: str = Field(default="local-")  # Environment prefix: local-, dev-, stage-, prod-
 
     # MinIO Bucket Names
     minio_bucket_images: str = Field(default="wisqu-images")  # AI-generated images (public)
