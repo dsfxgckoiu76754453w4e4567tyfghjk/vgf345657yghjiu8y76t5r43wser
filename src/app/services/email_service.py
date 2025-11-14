@@ -77,7 +77,10 @@ class EmailService:
         text_body: Optional[str] = None,
     ) -> bool:
         """
-        Send email via Mailgun API.
+        Send email via Mailgun official Python SDK.
+
+        Uses the official mailgun-python package.
+        Documentation: https://github.com/mailgun/mailgun-python
 
         Args:
             to_email: Recipient email address
@@ -91,10 +94,11 @@ class EmailService:
         try:
             from mailgun.client import Client
 
-            # Initialize Mailgun client
+            # Initialize Mailgun client with API key
             client = Client(auth=("api", self.mailgun_api_key))
 
             # Prepare email data
+            # Note: Must provide at least one of: text, html, amp-html, or template
             data = {
                 "from": f"{self.mailgun_from_name} <{self.mailgun_from_email}>",
                 "to": to_email,
@@ -106,15 +110,18 @@ class EmailService:
             if text_body:
                 data["text"] = text_body
 
-            # Send via Mailgun
+            # Send via Mailgun SDK
             response = client.messages.create(data=data, domain=self.mailgun_domain)
 
+            # Check response status
             if response.status_code == 200:
+                response_data = response.json()
                 logger.info(
                     "email_sent_via_mailgun",
                     to_email=to_email,
                     subject=subject,
-                    message_id=response.json().get("id"),
+                    message_id=response_data.get("id"),
+                    message=response_data.get("message"),
                 )
                 return True
             else:
@@ -122,14 +129,15 @@ class EmailService:
                     "mailgun_send_failed",
                     to_email=to_email,
                     status_code=response.status_code,
-                    response=response.text,
+                    response=response.text if hasattr(response, 'text') else str(response),
                 )
-                return False
+                # Fallback to SMTP on failure
+                return await self._send_via_smtp(to_email, subject, html_body, text_body)
 
         except ImportError:
             logger.error(
                 "mailgun_not_installed",
-                message="mailgun-python package not installed. Install with: pip install mailgun-python",
+                message="mailgun-python package not installed. Install with: uv add mailgun-python",
             )
             # Fallback to SMTP
             return await self._send_via_smtp(to_email, subject, html_body, text_body)
@@ -137,6 +145,7 @@ class EmailService:
             logger.error(
                 "mailgun_send_error",
                 error=str(e),
+                error_type=type(e).__name__,
                 to_email=to_email,
             )
             # Fallback to SMTP
