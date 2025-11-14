@@ -157,7 +157,7 @@ print_header "PHASE 3: CODE QUALITY CHECKS"
 
 # Check code formatting
 print_step "Checking code formatting (Black)"
-if poetry run black --check src/ tests/ &> /dev/null; then
+if uv run black --check src/ tests/ &> /dev/null; then
     print_success "Code is properly formatted"
 else
     print_error "Code formatting issues found"
@@ -167,7 +167,7 @@ fi
 
 # Check import sorting
 print_step "Checking import sorting (isort)"
-if poetry run isort --check-only src/ tests/ &> /dev/null; then
+if uv run isort --check-only src/ tests/ &> /dev/null; then
     print_success "Imports are properly sorted"
 else
     print_error "Import sorting issues found"
@@ -177,7 +177,7 @@ fi
 
 # Check flake8
 print_step "Checking linting (flake8)"
-if poetry run flake8 src/ tests/ --max-line-length=100 --statistics &> /dev/null; then
+if uv run flake8 src/ tests/ --max-line-length=100 --statistics &> /dev/null; then
     print_success "Flake8 checks passed"
 else
     print_error "Flake8 found issues"
@@ -187,7 +187,7 @@ fi
 
 # Check mypy
 print_step "Checking type hints (mypy)"
-if poetry run mypy src/ --ignore-missing-imports --show-error-codes &> /dev/null; then
+if uv run mypy src/ --ignore-missing-imports --show-error-codes &> /dev/null; then
     print_success "Type checking passed"
 else
     print_warning "Type checking found issues (non-critical)"
@@ -202,7 +202,7 @@ print_header "PHASE 4: SECURITY CHECKS"
 
 # Check for secrets
 print_step "Scanning for hardcoded secrets"
-if poetry run detect-secrets scan --baseline .secrets.baseline &> /dev/null; then
+if uv run detect-secrets scan --baseline .secrets.baseline &> /dev/null; then
     print_success "No new secrets detected"
 else
     print_error "Potential secrets found in code"
@@ -212,7 +212,7 @@ fi
 
 # Check Bandit
 print_step "Running security scan (Bandit)"
-if poetry run bandit -r src/ -c pyproject.toml -ll &> /dev/null; then
+if uv run bandit -r src/ -c pyproject.toml -ll &> /dev/null; then
     print_success "No high-severity security issues"
 else
     print_warning "Security issues found (review recommended)"
@@ -221,7 +221,7 @@ fi
 
 # Check dependency vulnerabilities
 print_step "Checking dependency vulnerabilities (Safety)"
-if poetry run safety check --json &> /dev/null; then
+if uv run safety check --json &> /dev/null; then
     print_success "No known vulnerabilities in dependencies"
 else
     print_warning "Vulnerable dependencies found (review recommended)"
@@ -236,7 +236,7 @@ print_header "PHASE 5: DATABASE CHECKS"
 
 # Check migrations
 print_step "Checking database migrations status"
-CURRENT_MIGRATION=$(poetry run alembic current 2>/dev/null | grep -v "INFO" || echo "none")
+CURRENT_MIGRATION=$(uv run alembic current 2>/dev/null | grep -v "INFO" || echo "none")
 if [ "$CURRENT_MIGRATION" != "none" ]; then
     print_success "Database is migrated: $CURRENT_MIGRATION"
 else
@@ -246,7 +246,7 @@ fi
 
 # Check if there are pending migrations
 print_step "Checking for pending migrations"
-PENDING=$(poetry run alembic check 2>&1 || true)
+PENDING=$(uv run alembic check 2>&1 || true)
 if echo "$PENDING" | grep -q "No new upgrade operations detected"; then
     print_success "No pending migrations"
 elif echo "$PENDING" | grep -q "Target database is not up to date"; then
@@ -265,7 +265,7 @@ print_header "PHASE 6: TESTING"
 
 # Run unit tests
 print_step "Running unit tests"
-if poetry run pytest tests/unit/ -v --tb=short &> /tmp/unit-tests.log; then
+if uv run pytest tests/unit/ -v --tb=short &> /tmp/unit-tests.log; then
     UNIT_COUNT=$(grep -o "passed" /tmp/unit-tests.log | wc -l)
     print_success "Unit tests passed ($UNIT_COUNT tests)"
 else
@@ -278,7 +278,7 @@ fi
 
 # Run integration tests
 print_step "Running integration tests"
-if poetry run pytest tests/integration/ -v --tb=short &> /tmp/integration-tests.log; then
+if uv run pytest tests/integration/ -v --tb=short &> /tmp/integration-tests.log; then
     INTEGRATION_COUNT=$(grep -o "passed" /tmp/integration-tests.log | wc -l)
     print_success "Integration tests passed ($INTEGRATION_COUNT tests)"
 else
@@ -290,7 +290,7 @@ fi
 
 # Check test coverage
 print_step "Checking test coverage"
-COVERAGE_REPORT=$(poetry run pytest tests/ --cov=src/app --cov-report=term-missing 2>&1 | grep "TOTAL" || echo "TOTAL 0%")
+COVERAGE_REPORT=$(uv run pytest tests/ --cov=src/app --cov-report=term-missing 2>&1 | grep "TOTAL" || echo "TOTAL 0%")
 COVERAGE_PERCENT=$(echo "$COVERAGE_REPORT" | grep -oP '\d+%' | tail -1 | tr -d '%')
 
 if [ "$COVERAGE_PERCENT" -ge 75 ]; then
@@ -315,7 +315,7 @@ print_info "Starting FastAPI server..."
 lsof -ti:8000 | xargs kill -9 2>/dev/null || true
 
 # Start app in background
-poetry run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &> /tmp/app-startup.log &
+uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &> /tmp/app-startup.log &
 APP_PID=$!
 
 # Wait for app to start (max 30 seconds)

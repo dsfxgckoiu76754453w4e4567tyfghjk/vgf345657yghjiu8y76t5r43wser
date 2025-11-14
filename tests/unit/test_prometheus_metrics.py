@@ -237,19 +237,19 @@ class TestErrorMetrics:
         assert 'component' in metrics.errors_total._labelnames
 
 
-class TestQueueMetrics:
-    """Test cases for queue length metrics."""
+class TestWorkflowMetrics:
+    """Test cases for Temporal workflow metrics."""
 
-    def test_queue_length_metric_defined(self):
-        """Test that queue length gauge is defined."""
+    def test_active_workers_metric_defined(self):
+        """Test that active workers gauge is defined."""
         # Assert
-        assert hasattr(metrics, 'celery_queue_length')
+        assert hasattr(metrics, 'temporal_active_workers')
 
-    def test_queue_length_is_gauge(self):
-        """Test that queue length is a Gauge (not Counter)."""
+    def test_active_workers_is_gauge(self):
+        """Test that active workers is a Gauge (not Counter)."""
         # Assert
         from prometheus_client import Gauge
-        assert isinstance(metrics.celery_queue_length, Gauge)
+        assert isinstance(metrics.temporal_active_workers, Gauge)
 
 
 class TestMetricsIntegration:
@@ -260,9 +260,9 @@ class TestMetricsIntegration:
         # Assert - Check that all major metric types are present
         required_metrics = [
             'http_requests_total',
-            'celery_tasks_submitted',
-            'celery_tasks_completed',
-            'celery_tasks_failed',
+            'temporal_workflows_started',
+            'temporal_workflows_completed',
+            'temporal_workflows_failed',
             'llm_requests_total',
             'llm_tokens_used',
             'llm_cost_usd',
@@ -280,7 +280,7 @@ class TestMetricsIntegration:
         """Test that critical metrics include environment label."""
         # Assert
         critical_metrics = [
-            metrics.celery_tasks_submitted,
+            metrics.temporal_workflows_started,
             metrics.llm_requests_total,
             metrics.users_active,
         ]

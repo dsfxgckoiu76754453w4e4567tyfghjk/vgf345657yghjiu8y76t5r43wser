@@ -227,7 +227,7 @@ class ASRService:
         except ImportError:
             logger.error("google_speech_import_error")
             raise ValueError(
-                "google-cloud-speech not installed. Install with: pip install google-cloud-speech"
+                "google-cloud-speech not installed. Install with: uv add google-cloud-speech"
             )
         except Exception as e:
             logger.error("google_speech_transcription_failed", error=str(e))
@@ -378,7 +378,7 @@ class ASRService:
         except ImportError:
             logger.error("gemini_import_error")
             raise ValueError(
-                "google-generativeai not installed. Install with: pip install google-generativeai"
+                "google-generativeai not installed. Install with: uv add google-generativeai"
             )
         except Exception as e:
             logger.error("gemini_transcription_failed", error=str(e))

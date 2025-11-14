@@ -5,7 +5,6 @@ from typing import Any, Annotated, TypedDict
 from operator import add
 from uuid import UUID
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
@@ -99,19 +98,20 @@ class LangGraphService:
                 api_key=settings.openai_api_key,
             )
 
-        elif settings.llm_provider == "anthropic":
-            if not settings.anthropic_api_key:
-                raise ValueError("ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic")
+        elif settings.llm_provider == "google":
+            if not settings.google_api_key:
+                raise ValueError("GOOGLE_API_KEY is required when LLM_PROVIDER=google")
 
-            return ChatAnthropic(
+            return ChatOpenAI(
                 model=settings.llm_model,
                 temperature=settings.llm_temperature,
                 max_tokens=settings.llm_max_tokens,
-                api_key=settings.anthropic_api_key,
+                api_key=settings.google_api_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
 
         else:
-            raise ValueError(f"Unsupported LLM provider: {settings.llm_provider}")
+            raise ValueError(f"Unsupported LLM provider: {settings.llm_provider}. Use 'openrouter' (recommended), 'openai', or 'google'. For Claude models, use 'openrouter' with model='anthropic/claude-3.5-sonnet'.")
 
     def _build_graph(self) -> StateGraph:
         """

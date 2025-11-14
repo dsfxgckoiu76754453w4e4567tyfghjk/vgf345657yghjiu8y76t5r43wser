@@ -34,7 +34,7 @@ class LangfuseService:
                 )
                 logger.info("langfuse_initialized", host=self.host)
             except ImportError:
-                logger.warn("langfuse_not_installed", message="Install with: pip install langfuse")
+                logger.warn("langfuse_not_installed", message="Install with: uv add langfuse")
             except Exception as e:
                 logger.error("langfuse_initialization_failed", error=str(e))
         else:

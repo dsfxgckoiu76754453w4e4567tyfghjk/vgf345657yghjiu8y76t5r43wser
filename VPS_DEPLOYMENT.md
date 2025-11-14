@@ -13,10 +13,10 @@ All environments run on the **SAME VPS** with complete isolation.
 
 | Environment | Port | Database | Redis DB | Qdrant | MinIO | Temporal Queue |
 |-------------|------|----------|----------|--------|-------|----------------|
-| **LOCAL** (You) | 8003 | `shia_chatbot_local` | 3 | `local_` | `local-` | `wisqu-local-queue` |
-| **DEV** (Team) | 8000 | `shia_chatbot_dev` | 0 | `dev_` | `dev-` | `wisqu-dev-queue` |
-| **STAGE** | 8001 | `shia_chatbot_stage` | 1 | `stage_` | `stage-` | `wisqu-stage-queue` |
-| **PROD** | 8002 | `shia_chatbot_prod` | 2 | `prod_` | `prod-` | `wisqu-prod-queue` |
+| **LOCAL** (You) | 8003 | `shia_chatbot_local` | 0 | `local_` | `local-` | `wisqu-local-queue` |
+| **DEV** (Team) | 8000 | `shia_chatbot_dev` | 1 | `dev_` | `dev-` | `wisqu-dev-queue` |
+| **STAGE** | 8001 | `shia_chatbot_stage` | 2 | `stage_` | `stage-` | `wisqu-stage-queue` |
+| **PROD** | 8002 | `shia_chatbot_prod` | 3 | `prod_` | `prod-` | `wisqu-prod-queue` |
 
 ✅ **Complete isolation** - Each environment has its own database, Redis DB, collections, buckets, and workflows.
 
@@ -30,16 +30,16 @@ docker compose -f docker-compose.base.yml up -d
 
 # 2. Set environment variables for LOCAL
 export DATABASE_NAME=shia_chatbot_local
-export REDIS_DB=3
+export REDIS_DB=0
 export QDRANT_COLLECTION_PREFIX=local_
 export MINIO_BUCKET_PREFIX=local-
 export TEMPORAL_TASK_QUEUE=wisqu-local-queue
 
 # 3. Run migrations for LOCAL database
-poetry run alembic upgrade head
+uv run alembic upgrade head
 
 # 4. Run app with hot reload
-poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8003
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8003
 ```
 
 ### Deploy for Team (DEV/STAGE/PROD)
@@ -76,8 +76,8 @@ Shared across all 4 environments (docker-compose.base.yml):
 git pull
 
 # Work on features (uses shia_chatbot_local database)
-export DATABASE_NAME=shia_chatbot_local REDIS_DB=3
-poetry run uvicorn app.main:app --reload --port 8003
+export DATABASE_NAME=shia_chatbot_local REDIS_DB=0
+uv run uvicorn app.main:app --reload --port 8003
 
 # Test your changes
 curl http://localhost:8003/health
@@ -124,7 +124,7 @@ docker compose -f docker-compose.base.yml -f docker-compose.app.prod.yml up -d -
 ```bash
 # LOCAL (your work)
 export DATABASE_NAME=shia_chatbot_local
-poetry run alembic upgrade head
+uv run alembic upgrade head
 
 # DEV (deployed)
 docker exec shia-chatbot-dev-app alembic upgrade head
@@ -141,8 +141,8 @@ docker exec shia-chatbot-prod-app alembic upgrade head
 ```bash
 # Work on LOCAL first
 export DATABASE_NAME=shia_chatbot_local
-poetry run alembic revision --autogenerate -m "add new table"
-poetry run alembic upgrade head
+uv run alembic revision --autogenerate -m "add new table"
+uv run alembic upgrade head
 
 # Test it, then deploy to team
 ```
@@ -228,13 +228,13 @@ lsof -i :8002   # PROD
 
 ```bash
 # Check current version
-poetry run alembic current
+uv run alembic current
 
 # View migration history
-poetry run alembic history
+uv run alembic history
 
 # Upgrade to latest
-poetry run alembic upgrade head
+uv run alembic upgrade head
 ```
 
 ## Promotion Strategy
