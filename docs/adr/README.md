@@ -35,3 +35,4 @@ XXX-short-descriptive-title.md
 | [002](002-openrouter-llm-provider.md) | OpenRouter as Primary LLM Provider | Accepted | 2025-01-13 |
 | [003](003-temporal-workflow-engine.md) | Temporal Replaces Celery | Accepted | 2025-01-14 |
 | [004](004-uv-package-manager.md) | Migrate to uv Package Manager | Accepted | 2025-01-14 |
+| [005](005-gemini-asr-integration.md) | Gemini Audio for ASR Transcription | Accepted | 2025-01-14 |

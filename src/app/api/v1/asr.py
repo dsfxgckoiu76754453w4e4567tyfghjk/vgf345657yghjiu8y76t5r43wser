@@ -28,8 +28,9 @@ router = APIRouter()
     Transcribe audio files to text using ASR (Automatic Speech Recognition).
 
     **Supported Providers:**
-    - OpenAI Whisper (default) - Highly accurate, multi-language
-    - Google Speech-to-Text - Enterprise-grade (placeholder)
+    - OpenAI Whisper - Highly accurate, multi-language
+    - Google Speech-to-Text - Enterprise-grade
+    - Gemini - Google's multimodal AI with advanced audio understanding
 
     **Supported Languages:**
     - Persian/Farsi (fa) - Default
@@ -41,10 +42,11 @@ router = APIRouter()
     - Malay (ms)
 
     **Supported Formats:**
-    - WAV, MP3, M4A, FLAC, OGG, WEBM
+    - WAV, MP3, M4A, FLAC, OGG, WEBM, AIFF, AAC
 
     **File Size Limit:**
-    - Maximum: 25 MB (Whisper limit)
+    - Whisper: Maximum 25 MB
+    - Gemini: Inline data <20MB, File upload up to 9.5 hours
 
     **Use Cases:**
     - Voice questions to the chatbot

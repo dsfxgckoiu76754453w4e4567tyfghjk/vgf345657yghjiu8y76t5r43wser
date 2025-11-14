@@ -1,5 +1,6 @@
 """Automatic Speech Recognition (ASR) service."""
 
+import base64
 import io
 from typing import Literal, Optional
 
@@ -18,7 +19,7 @@ class ASRService:
     def __init__(self):
         """Initialize ASR service."""
         # Get provider from settings
-        self.provider: Literal["google", "whisper"] = getattr(
+        self.provider: Literal["google", "whisper", "gemini"] = getattr(
             settings, "asr_provider", "whisper"
         )
 
@@ -29,6 +30,10 @@ class ASRService:
         elif self.provider == "google":
             # Google Speech-to-Text client would be initialized here
             self.google_credentials = getattr(settings, "google_credentials_path", None)
+        elif self.provider == "gemini":
+            # Gemini client will be initialized on-demand
+            self.gemini_api_key = getattr(settings, "gemini_api_key", None)
+            self.gemini_model = getattr(settings, "gemini_model", "gemini-2.0-flash-exp")
 
     # ========================================================================
     # Speech-to-Text Transcription
@@ -57,6 +62,8 @@ class ASRService:
             return await self._transcribe_with_whisper(audio_data, audio_format, language, model)
         elif self.provider == "google":
             return await self._transcribe_with_google(audio_data, audio_format, language)
+        elif self.provider == "gemini":
+            return await self._transcribe_with_gemini(audio_data, audio_format, language, model)
         else:
             raise ValueError(f"Unsupported ASR provider: {self.provider}")
 
@@ -227,6 +234,157 @@ class ASRService:
             raise ValueError(f"Google Speech transcription failed: {str(e)}")
 
     # ========================================================================
+    # Gemini Audio Implementation
+    # ========================================================================
+
+    async def _transcribe_with_gemini(
+        self,
+        audio_data: bytes,
+        audio_format: str,
+        language: str,
+        model: Optional[str] = None,
+    ) -> dict:
+        """
+        Transcribe audio using Gemini's audio understanding.
+
+        Supports inline data (<20MB) and file upload (>20MB).
+
+        Args:
+            audio_data: Audio file bytes
+            audio_format: Audio format
+            language: Language code (e.g., 'fa', 'en', 'ar')
+            model: Model to use (gemini-2.0-flash-exp by default)
+
+        Returns:
+            Transcription result
+        """
+        if not self.gemini_api_key:
+            raise ValueError("Gemini API key not configured")
+
+        try:
+            import google.generativeai as genai
+
+            # Configure Gemini
+            genai.configure(api_key=self.gemini_api_key)
+
+            # Map language codes to full language names
+            language_map = {
+                "fa": "Persian",
+                "en": "English",
+                "ar": "Arabic",
+                "ur": "Urdu",
+                "tr": "Turkish",
+                "id": "Indonesian",
+                "ms": "Malay",
+            }
+            language_name = language_map.get(language, language)
+
+            # Map audio format to MIME type
+            mime_type_map = {
+                "wav": "audio/wav",
+                "mp3": "audio/mp3",
+                "aiff": "audio/aiff",
+                "aac": "audio/aac",
+                "ogg": "audio/ogg",
+                "flac": "audio/flac",
+                "m4a": "audio/mp4",
+                "webm": "audio/webm",
+            }
+            mime_type = mime_type_map.get(audio_format.lower(), "audio/wav")
+
+            # Check file size (20MB threshold)
+            size_mb = len(audio_data) / (1024 * 1024)
+
+            # Simple transcription prompt
+            prompt = f"Generate a transcript of the speech in {language_name}."
+
+            # Use appropriate model
+            model_name = model or self.gemini_model
+
+            if size_mb < 20:
+                # Inline data for small files (<20MB)
+                logger.info(
+                    "gemini_transcribe_inline",
+                    size_mb=round(size_mb, 2),
+                    language=language_name,
+                )
+
+                # Create model instance
+                model_instance = genai.GenerativeModel(model_name)
+
+                # Encode audio to base64 for inline data
+                audio_base64 = base64.b64encode(audio_data).decode("utf-8")
+
+                # Generate content with inline audio
+                response = await model_instance.generate_content_async(
+                    [
+                        {
+                            "mime_type": mime_type,
+                            "data": audio_base64,
+                        },
+                        prompt,
+                    ]
+                )
+
+            else:
+                # File upload for large files (>20MB, max 9.5 hours)
+                logger.info(
+                    "gemini_transcribe_upload",
+                    size_mb=round(size_mb, 2),
+                    language=language_name,
+                )
+
+                # Upload file to Gemini
+                audio_file = genai.upload_file(
+                    io.BytesIO(audio_data),
+                    mime_type=mime_type,
+                )
+
+                # Wait for file processing
+                import time
+
+                while audio_file.state.name == "PROCESSING":
+                    time.sleep(2)
+                    audio_file = genai.get_file(audio_file.name)
+
+                if audio_file.state.name == "FAILED":
+                    raise ValueError("Gemini failed to process audio file")
+
+                # Create model instance
+                model_instance = genai.GenerativeModel(model_name)
+
+                # Generate content with uploaded file
+                response = await model_instance.generate_content_async([audio_file, prompt])
+
+                # Delete uploaded file after processing
+                genai.delete_file(audio_file.name)
+
+            # Extract transcription text
+            transcription_text = response.text
+
+            logger.info(
+                "gemini_transcription_success",
+                language=language_name,
+                text_length=len(transcription_text),
+            )
+
+            return {
+                "text": transcription_text,
+                "language": language,
+                "provider": "gemini",
+                "model": model_name,
+            }
+
+        except ImportError:
+            logger.error("gemini_import_error")
+            raise ValueError(
+                "google-generativeai not installed. Install with: pip install google-generativeai"
+            )
+        except Exception as e:
+            logger.error("gemini_transcription_failed", error=str(e))
+            raise ValueError(f"Gemini transcription failed: {str(e)}")
+
+    # ========================================================================
     # Language Support
     # ========================================================================
 
@@ -386,6 +544,28 @@ class ASRService:
                         "healthy": False,
                         "provider": "google",
                         "error": "google-cloud-speech not installed",
+                    }
+
+            elif self.provider == "gemini":
+                if not self.gemini_api_key:
+                    return {
+                        "healthy": False,
+                        "provider": "gemini",
+                        "error": "Gemini API key not configured",
+                    }
+                try:
+                    import google.generativeai  # noqa: F401
+
+                    return {
+                        "healthy": True,
+                        "provider": "gemini",
+                        "model": self.gemini_model,
+                    }
+                except ImportError:
+                    return {
+                        "healthy": False,
+                        "provider": "gemini",
+                        "error": "google-generativeai not installed",
                     }
 
             else:

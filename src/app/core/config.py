@@ -269,13 +269,16 @@ class Settings(BaseSettings):
 
     # ASR (Automatic Speech Recognition) Settings
     asr_enabled: bool = Field(default=True)
-    asr_provider: Literal["google", "openai", "whisper"] = Field(default="google")
+    asr_provider: Literal["google", "openai", "whisper", "gemini"] = Field(default="google")
     asr_language: str = Field(default="fa-IR")  # Persian/Farsi
     asr_alternative_languages: str = Field(
         default="ar-SA,en-US"
     )  # Arabic, English for fallback
     asr_max_audio_duration_seconds: int = Field(default=600)  # 10 minutes
     google_asr_credentials_path: str | None = Field(default=None)  # Path to JSON credentials
+
+    # Gemini ASR Settings
+    gemini_model: str = Field(default="gemini-2.0-flash-exp")  # Gemini model for ASR
 
     # Environment-Specific Settings
     environment_data_retention_days: int = Field(
