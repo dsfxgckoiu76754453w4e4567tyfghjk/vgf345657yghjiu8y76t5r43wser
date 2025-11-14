@@ -94,6 +94,7 @@ python-dateutil = "^2.9.0"
 pytz = "^2024.1"
 jdatetime = "^5.0.0"
 bcrypt = "~3.2"
+mutagen = "^1.47.0"  # Audio metadata extraction
 
 [tool.poetry.group.dev.dependencies]
 # Testing

@@ -56,16 +56,11 @@ class Settings(BaseSettings):
     redis_cache_db: int = Field(default=1)
     redis_queue_db: int = Field(default=2)
 
-    # Celery
-    celery_broker_url: str | None = Field(default=None)  # Auto-configured from redis_url
-    celery_result_backend: str | None = Field(default=None)  # Auto-configured from database_url
-    celery_task_always_eager: bool = Field(default=False)  # Sync execution for testing
-    celery_task_eager_propagates: bool = Field(default=True)  # Propagate exceptions in eager mode
-
     # Qdrant
     qdrant_url: str = Field(default="http://localhost:6333")
     qdrant_api_key: str | None = Field(default=None)
     qdrant_collection_name: str = Field(default="islamic_knowledge")
+    qdrant_collection_prefix: str = Field(default="")  # Environment prefix (e.g., "dev_", "prod_")
 
     # JWT & Security
     jwt_secret_key: str = Field(default="change-in-production")
@@ -107,8 +102,6 @@ class Settings(BaseSettings):
 
     # Reranker (for 2-stage retrieval)
     reranker_enabled: bool = Field(default=True)
-    reranker_provider: Literal["cohere"] = Field(default="cohere")
-    reranker_model: str = Field(default="rerank-3.5")
 
     # Web Search
     web_search_enabled: bool = Field(default=True)
@@ -160,8 +153,7 @@ class Settings(BaseSettings):
     reranker_provider: Literal["cohere", "vertex"] = Field(default="cohere")
     reranker_model: str = Field(default="rerank-3.5")
 
-    # ASR
-    asr_provider: Literal["google", "whisper"] = Field(default="google")
+    # ASR (partial config - full config below)
     google_speech_api_key: str | None = Field(default=None)
 
     # Chonkie
@@ -244,6 +236,7 @@ class Settings(BaseSettings):
     minio_secure: bool = Field(default=False)  # True for HTTPS
     minio_region: str = Field(default="us-east-1")
     minio_public_url: str = Field(default="http://localhost:9000")  # For public URLs
+    minio_bucket_prefix: str = Field(default="")  # Environment prefix (e.g., "dev-", "prod-")
 
     # MinIO Bucket Names
     minio_bucket_images: str = Field(default="wisqu-images")  # AI-generated images (public)
@@ -398,27 +391,6 @@ class Settings(BaseSettings):
                     "DEBUG mode is enabled in production. This is not recommended.",
                     UserWarning
                 )
-
-        return self
-
-    @model_validator(mode="after")
-    def configure_celery_urls(self):
-        """Auto-configure Celery broker and result backend from Redis and Database URLs."""
-        # Auto-configure Celery broker from Redis if not explicitly set
-        if self.celery_broker_url is None:
-            redis_db = self.get_redis_db("queue")  # Use queue DB for Celery
-            # Parse base Redis URL and add queue DB
-            if "//" in self.redis_url:
-                base_url = self.redis_url.rsplit("/", 1)[0]
-            else:
-                base_url = self.redis_url
-            self.celery_broker_url = f"{base_url}/{redis_db}"
-
-        # Auto-configure Celery result backend from PostgreSQL if not explicitly set
-        if self.celery_result_backend is None:
-            # Use synchronous psycopg2 driver for Celery result backend
-            sync_url = self.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
-            self.celery_result_backend = f"db+{sync_url}"
 
         return self
 

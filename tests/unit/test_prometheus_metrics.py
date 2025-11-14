@@ -6,68 +6,95 @@ from unittest.mock import patch, MagicMock
 from app.core import metrics
 
 
-class TestTaskMetrics:
-    """Test cases for Celery task metrics."""
+class TestWorkflowMetrics:
+    """Test cases for Temporal workflow metrics."""
 
-    @patch('app.core.metrics.celery_tasks_submitted')
-    def test_track_task_submission(self, mock_counter):
-        """Test tracking task submission increments counter."""
+    @patch('app.core.metrics.temporal_workflows_started')
+    def test_track_workflow_start(self, mock_counter):
+        """Test tracking workflow start increments counter."""
         # Arrange
-        task_name = "app.tasks.chat.process_chat_message"
-        queue = "high_priority"
+        workflow_type = "ChatWorkflow"
+        task_queue = "wisqu-dev-queue"
 
         # Act
-        metrics.track_task_submission(task_name, queue)
+        metrics.track_workflow_start(workflow_type, task_queue)
 
         # Assert
-        mock_counter.labels.assert_called_once_with(task_name, queue, metrics.settings.environment)
+        mock_counter.labels.assert_called_once_with(
+            workflow_type=workflow_type,
+            task_queue=task_queue,
+            environment=metrics.settings.environment
+        )
         mock_counter.labels().inc.assert_called_once()
 
-    @patch('app.core.metrics.celery_tasks_completed')
-    @patch('app.core.metrics.celery_task_duration_seconds')
-    def test_track_task_completion(self, mock_histogram, mock_counter):
-        """Test tracking task completion records metrics."""
+    @patch('app.core.metrics.temporal_workflows_completed')
+    @patch('app.core.metrics.temporal_workflow_duration_seconds')
+    def test_track_workflow_completion(self, mock_histogram, mock_counter):
+        """Test tracking workflow completion records metrics."""
         # Arrange
-        task_name = "app.tasks.images.generate_image"
-        queue = "high_priority"
+        workflow_type = "ChatWorkflow"
+        task_queue = "wisqu-dev-queue"
         duration = 5.5
 
         # Act
-        metrics.track_task_completion(task_name, queue, duration)
+        metrics.track_workflow_completion(workflow_type, task_queue, duration)
 
         # Assert
-        mock_counter.labels.assert_called_once_with(task_name, queue, metrics.settings.environment)
+        mock_counter.labels.assert_called_once_with(
+            workflow_type=workflow_type,
+            task_queue=task_queue,
+            environment=metrics.settings.environment
+        )
         mock_counter.labels().inc.assert_called_once()
-        mock_histogram.labels.assert_called_once_with(task_name, queue, metrics.settings.environment)
+        mock_histogram.labels.assert_called_once_with(
+            workflow_type=workflow_type,
+            task_queue=task_queue,
+            environment=metrics.settings.environment
+        )
         mock_histogram.labels().observe.assert_called_once_with(duration)
 
-    @patch('app.core.metrics.celery_tasks_failed')
-    def test_track_task_failure(self, mock_counter):
-        """Test tracking task failure increments counter."""
+    @patch('app.core.metrics.temporal_workflows_failed')
+    def test_track_workflow_failure(self, mock_counter):
+        """Test tracking workflow failure increments counter."""
         # Arrange
-        task_name = "app.tasks.asr.transcribe_audio"
-        queue = "high_priority"
+        workflow_type = "ChatWorkflow"
+        task_queue = "wisqu-dev-queue"
 
         # Act
-        metrics.track_task_failure(task_name, queue)
+        metrics.track_workflow_failure(workflow_type, task_queue)
 
         # Assert
-        mock_counter.labels.assert_called_once_with(task_name, queue, metrics.settings.environment)
+        mock_counter.labels.assert_called_once_with(
+            workflow_type=workflow_type,
+            task_queue=task_queue,
+            environment=metrics.settings.environment
+        )
         mock_counter.labels().inc.assert_called_once()
 
-    @patch('app.core.metrics.celery_tasks_retried')
-    def test_track_task_retry(self, mock_counter):
-        """Test tracking task retry increments counter."""
+    @patch('app.core.metrics.temporal_activity_executions')
+    @patch('app.core.metrics.temporal_activity_duration_seconds')
+    def test_track_activity_execution(self, mock_histogram, mock_counter):
+        """Test tracking activity execution records metrics."""
         # Arrange
-        task_name = "app.tasks.web_search.search_web"
-        queue = "high_priority"
+        activity_type = "generate_response"
+        status = "success"
+        duration = 2.5
 
         # Act
-        metrics.track_task_retry(task_name, queue)
+        metrics.track_activity_execution(activity_type, status, duration)
 
         # Assert
-        mock_counter.labels.assert_called_once_with(task_name, queue, metrics.settings.environment)
+        mock_counter.labels.assert_called_once_with(
+            activity_type=activity_type,
+            status=status,
+            environment=metrics.settings.environment
+        )
         mock_counter.labels().inc.assert_called_once()
+        mock_histogram.labels.assert_called_once_with(
+            activity_type=activity_type,
+            environment=metrics.settings.environment
+        )
+        mock_histogram.labels().observe.assert_called_once_with(duration)
 
 
 class TestLLMMetrics:

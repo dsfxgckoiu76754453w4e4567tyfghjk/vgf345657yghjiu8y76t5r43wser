@@ -27,17 +27,6 @@ scrape_configs:
           service: 'nginx'
           role: 'load-balancer'
 
-  # Flower Monitoring Dashboard (Celery metrics)
-  - job_name: 'celery-flower'
-    scrape_interval: 30s
-    metrics_path: '/metrics'
-    static_configs:
-      - targets:
-          - 'shia-chatbot-flower:5556'
-        labels:
-          service: 'celery'
-          component: 'flower'
-
   # Alternative: Direct FastAPI access via NGINX (port 8100)
   - job_name: 'fastapi-via-nginx'
     scrape_interval: 15s
@@ -62,53 +51,3 @@ relabel_configs:
 
 # Alert Rules (optional - add to your alert rules file)
 # groups:
-#   - name: celery_alerts
-#     interval: 30s
-#     rules:
-#       - alert: HighTaskFailureRate
-#         expr: rate(celery_tasks_failed_total[5m]) > 0.1
-#         for: 5m
-#         labels:
-#           severity: warning
-#         annotations:
-#           summary: "High Celery task failure rate"
-#           description: "Task {{ $labels.task_name }} has failure rate > 0.1/s"
-#
-#       - alert: QueueBacklog
-#         expr: celery_queue_length > 100
-#         for: 10m
-#         labels:
-#           severity: warning
-#         annotations:
-#           summary: "Celery queue backlog detected"
-#           description: "Queue {{ $labels.queue }} has {{ $value }} tasks pending"
-#
-#       - alert: NoActiveWorkers
-#         expr: sum(celery_active_workers) == 0
-#         for: 2m
-#         labels:
-#           severity: critical
-#         annotations:
-#           summary: "No active Celery workers"
-#           description: "All Celery workers are down"
-#
-#   - name: fastapi_alerts
-#     interval: 30s
-#     rules:
-#       - alert: HighErrorRate
-#         expr: rate(http_requests_total{status_code=~"5.."}[5m]) > 1
-#         for: 5m
-#         labels:
-#           severity: critical
-#         annotations:
-#           summary: "High HTTP error rate"
-#           description: "HTTP 5xx error rate is {{ $value }}/s"
-#
-#       - alert: HighResponseTime
-#         expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
-#         for: 10m
-#         labels:
-#           severity: warning
-#         annotations:
-#           summary: "High API response time"
-#           description: "P95 response time is {{ $value }}s"

@@ -101,8 +101,6 @@ docker-local: ## Mode 1: Start ALL services (app runs natively)
 	@echo ""
 	@echo "💡 Now run app natively:"
 	@echo "   make dev           # FastAPI with hot reload"
-	@echo "   make celery-worker # Celery worker"
-	@echo "   make flower        # Flower (or use Docker version on :5555)"
 
 docker-local-down: ## Mode 1: Stop all local development services
 	$(DOCKER_COMPOSE) -f docker-compose.base.yml down
@@ -120,7 +118,6 @@ docker-dev: ## Mode 2: Start DEV environment (ENVIRONMENT=dev)
 	@echo ""
 	@echo "Services available:"
 	@echo "   - App (FastAPI): http://localhost:8000 (Swagger: /docs)"
-	@echo "   - Flower (Celery): http://localhost:5555"
 	@echo "   - PostgreSQL: localhost:5433"
 	@echo "   - Redis: localhost:6379"
 	@echo "   - Qdrant: http://localhost:6333/dashboard"
@@ -138,7 +135,6 @@ docker-stage: ## Mode 2: Start STAGE environment (ENVIRONMENT=stage)
 	@echo ""
 	@echo "Services available:"
 	@echo "   - App (FastAPI): http://localhost:8001 (Swagger: /docs)"
-	@echo "   - Flower (Celery): http://localhost:5556"
 	@echo "   - All infrastructure services same as DEV"
 	@echo ""
 	@echo "Environment: ENVIRONMENT=stage"
@@ -172,7 +168,6 @@ docker-prod: ## Mode 2: Start PROD environment (⚠️ SHARED VPS - BE CAREFUL!)
 	@echo ""
 	@echo "Services available:"
 	@echo "   - App (FastAPI): http://localhost:8002 (Swagger: /docs)"
-	@echo "   - Flower (Celery): http://localhost:5557"
 	@echo "   - All infrastructure services same as DEV/STAGE"
 	@echo ""
 	@echo "Environment: ENVIRONMENT=prod"
@@ -238,17 +233,6 @@ docker-logs-postgres: ## Show logs from PostgreSQL
 docker-logs-redis: ## Show logs from Redis
 	docker logs -f shia-chatbot-redis
 
-docker-logs-celery: ## Show logs from Celery worker (specify ENV=dev|stage|prod)
-	@if [ "$(ENV)" = "dev" ]; then \
-		docker logs -f shia-chatbot-dev-celery-worker; \
-	elif [ "$(ENV)" = "stage" ]; then \
-		docker logs -f shia-chatbot-stage-celery-worker; \
-	elif [ "$(ENV)" = "prod" ]; then \
-		docker logs -f shia-chatbot-prod-celery-worker; \
-	else \
-		echo "Usage: make docker-logs-celery ENV=dev|stage|prod"; \
-	fi
-
 docker-ps: ## Check status and health of all Docker services
 	$(DOCKER_COMPOSE) ps
 	@echo ""
@@ -277,26 +261,14 @@ docker-health: ## Check health of all running Docker services
 	@echo "=== DEV Environment (if running) ==="
 	@echo -n "DEV App: "
 	@curl -sf http://localhost:8000/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
-	@echo -n "DEV Celery: "
-	@docker exec shia-chatbot-dev-celery-worker celery -A app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
-	@echo -n "DEV Flower: "
-	@curl -sf http://localhost:5555/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo ""
 	@echo "=== STAGE Environment (if running) ==="
 	@echo -n "STAGE App: "
 	@curl -sf http://localhost:8001/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
-	@echo -n "STAGE Celery: "
-	@docker exec shia-chatbot-stage-celery-worker celery -A app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
-	@echo -n "STAGE Flower: "
-	@curl -sf http://localhost:5556/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo ""
 	@echo "=== PROD Environment (if running) ==="
 	@echo -n "PROD App: "
 	@curl -sf http://localhost:8002/health >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
-	@echo -n "PROD Celery: "
-	@docker exec shia-chatbot-prod-celery-worker celery -A app.tasks inspect ping 2>/dev/null >/dev/null && echo "✅ Healthy" || echo "❌ Not running"
-	@echo -n "PROD Flower: "
-	@curl -sf http://localhost:5557/healthcheck >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Not running"
 	@echo ""
 	@echo "💡 Modes:"
 	@echo "   Mode 1: make docker-local (then run: make dev)"
@@ -584,10 +556,6 @@ langfuse-ui: ## Open Langfuse UI for observability
 qdrant-ui: ## Open Qdrant UI for vector database
 	@echo "📊 Qdrant UI available at: http://localhost:6333/dashboard"
 	@open http://localhost:6333/dashboard || xdg-open http://localhost:6333/dashboard || echo "Navigate to http://localhost:6333/dashboard"
-
-flower-ui: ## Open Flower UI for Celery monitoring
-	@echo "📊 Flower UI available at: http://localhost:5555"
-	@open http://localhost:5555 || xdg-open http://localhost:5555 || echo "Navigate to http://localhost:5555"
 
 redis-cli: ## Open Redis CLI
 	docker exec -it shia-chatbot-redis redis-cli

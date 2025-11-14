@@ -50,50 +50,57 @@ app_info.info({
 })
 
 # ============================================================================
-# CELERY METRICS (Custom)
+# TEMPORAL WORKFLOW METRICS
 # ============================================================================
 
-celery_tasks_submitted = Counter(
-    'celery_tasks_submitted_total',
-    'Total tasks submitted to Celery',
-    ['task_name', 'queue', 'environment']
+temporal_workflows_started = Counter(
+    'temporal_workflows_started_total',
+    'Total workflows started',
+    ['workflow_type', 'task_queue', 'environment']
 )
 
-celery_tasks_completed = Counter(
-    'celery_tasks_completed_total',
-    'Total tasks completed successfully',
-    ['task_name', 'queue', 'environment']
+temporal_workflows_completed = Counter(
+    'temporal_workflows_completed_total',
+    'Total workflows completed successfully',
+    ['workflow_type', 'task_queue', 'environment']
 )
 
-celery_tasks_failed = Counter(
-    'celery_tasks_failed_total',
-    'Total tasks that failed',
-    ['task_name', 'queue', 'environment']
+temporal_workflows_failed = Counter(
+    'temporal_workflows_failed_total',
+    'Total workflows that failed',
+    ['workflow_type', 'task_queue', 'environment']
 )
 
-celery_tasks_retried = Counter(
-    'celery_tasks_retried_total',
-    'Total task retries',
-    ['task_name', 'queue', 'environment']
+temporal_workflows_canceled = Counter(
+    'temporal_workflows_canceled_total',
+    'Total workflows that were canceled',
+    ['workflow_type', 'task_queue', 'environment']
 )
 
-celery_task_duration_seconds = Histogram(
-    'celery_task_duration_seconds',
-    'Task execution duration in seconds',
-    ['task_name', 'queue', 'environment'],
-    buckets=(0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0)
+temporal_workflow_duration_seconds = Histogram(
+    'temporal_workflow_duration_seconds',
+    'Workflow execution duration in seconds',
+    ['workflow_type', 'task_queue', 'environment'],
+    buckets=(0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
 )
 
-celery_queue_length = Gauge(
-    'celery_queue_length',
-    'Number of tasks in queue',
-    ['queue', 'environment']
+temporal_activity_executions = Counter(
+    'temporal_activity_executions_total',
+    'Total activity executions',
+    ['activity_type', 'status', 'environment']  # status: success, failed, retry
 )
 
-celery_active_workers = Gauge(
-    'celery_active_workers',
-    'Number of active Celery workers',
-    ['hostname', 'environment']
+temporal_activity_duration_seconds = Histogram(
+    'temporal_activity_duration_seconds',
+    'Activity execution duration in seconds',
+    ['activity_type', 'environment'],
+    buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0)
+)
+
+temporal_active_workers = Gauge(
+    'temporal_active_workers',
+    'Number of active Temporal workers',
+    ['task_queue', 'environment']
 )
 
 # ============================================================================
@@ -250,46 +257,68 @@ errors_total = Counter(
 # HELPER FUNCTIONS
 # ============================================================================
 
-def track_task_submission(task_name: str, queue: str):
-    """Track task submission to Celery."""
-    celery_tasks_submitted.labels(
-        task_name=task_name,
-        queue=queue,
+def track_workflow_start(workflow_type: str, task_queue: str):
+    """Track workflow start."""
+    temporal_workflows_started.labels(
+        workflow_type=workflow_type,
+        task_queue=task_queue,
         environment=settings.environment
     ).inc()
 
 
-def track_task_completion(task_name: str, queue: str, duration: float):
-    """Track task completion."""
-    celery_tasks_completed.labels(
-        task_name=task_name,
-        queue=queue,
+def track_workflow_completion(workflow_type: str, task_queue: str, duration: float):
+    """Track workflow completion."""
+    temporal_workflows_completed.labels(
+        workflow_type=workflow_type,
+        task_queue=task_queue,
         environment=settings.environment
     ).inc()
 
-    celery_task_duration_seconds.labels(
-        task_name=task_name,
-        queue=queue,
+    temporal_workflow_duration_seconds.labels(
+        workflow_type=workflow_type,
+        task_queue=task_queue,
         environment=settings.environment
     ).observe(duration)
 
 
-def track_task_failure(task_name: str, queue: str):
-    """Track task failure."""
-    celery_tasks_failed.labels(
-        task_name=task_name,
-        queue=queue,
+def track_workflow_failure(workflow_type: str, task_queue: str):
+    """Track workflow failure."""
+    temporal_workflows_failed.labels(
+        workflow_type=workflow_type,
+        task_queue=task_queue,
         environment=settings.environment
     ).inc()
 
 
-def track_task_retry(task_name: str, queue: str):
-    """Track task retry."""
-    celery_tasks_retried.labels(
-        task_name=task_name,
-        queue=queue,
+def track_workflow_cancel(workflow_type: str, task_queue: str):
+    """Track workflow cancellation."""
+    temporal_workflows_canceled.labels(
+        workflow_type=workflow_type,
+        task_queue=task_queue,
         environment=settings.environment
     ).inc()
+
+
+def track_activity_execution(activity_type: str, status: str, duration: float = None):
+    """
+    Track activity execution.
+
+    Args:
+        activity_type: Name of the activity
+        status: Execution status (success, failed, retry)
+        duration: Optional execution duration in seconds
+    """
+    temporal_activity_executions.labels(
+        activity_type=activity_type,
+        status=status,
+        environment=settings.environment
+    ).inc()
+
+    if duration is not None:
+        temporal_activity_duration_seconds.labels(
+            activity_type=activity_type,
+            environment=settings.environment
+        ).observe(duration)
 
 
 def track_llm_request(provider: str, model: str, duration: float, tokens: dict, cost: float):
