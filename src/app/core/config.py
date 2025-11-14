@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     )
 
     # Environment
-    environment: Literal["dev", "test", "prod"] = Field(default="dev")
+    # 4 isolated environments: local (you), dev (team), stage (beta), prod (live)
+    environment: Literal["local", "dev", "stage", "prod"] = Field(default="local")
 
     # Temporal Workflow Engine
     temporal_host: str = Field(default="localhost:7233")
@@ -319,8 +320,8 @@ class Settings(BaseSettings):
     def set_debug_from_environment(cls, v, info):
         """Automatically set debug based on environment if not explicitly set."""
         if v is None:
-            environment = info.data.get("environment", "dev")
-            return environment == "dev"
+            environment = info.data.get("environment", "local")
+            return environment in ["local", "dev"]  # Debug enabled for local and dev
         return v
 
     @field_validator("log_level", mode="before")
@@ -328,8 +329,8 @@ class Settings(BaseSettings):
     def set_log_level_from_environment(cls, v, info):
         """Automatically set log level based on environment if not explicitly set."""
         if v is None:
-            environment = info.data.get("environment", "dev")
-            return {"dev": "DEBUG", "test": "INFO", "prod": "WARNING"}[environment]
+            environment = info.data.get("environment", "local")
+            return {"local": "DEBUG", "dev": "DEBUG", "stage": "INFO", "prod": "WARNING"}[environment]
         return v
 
     @field_validator("log_format", mode="before")
@@ -337,8 +338,8 @@ class Settings(BaseSettings):
     def set_log_format_from_environment(cls, v, info):
         """Automatically set log format based on environment if not explicitly set."""
         if v is None:
-            environment = info.data.get("environment", "dev")
-            return "colored" if environment == "dev" else "json"
+            environment = info.data.get("environment", "local")
+            return "colored" if environment in ["local", "dev"] else "json"
         return v
 
     @field_validator("log_timestamp_precision", mode="before")
@@ -402,8 +403,8 @@ class Settings(BaseSettings):
         """Auto-configure environment-specific settings based on environment."""
         # Configure data retention based on environment
         retention_map = {
+            "local": 30,  # 30 days for local
             "dev": 30,  # 30 days for dev
-            "test": 30,  # 30 days for test
             "stage": 90,  # 90 days for stage
             "prod": 365,  # 1 year for prod (but manual delete still needed)
         }
@@ -422,8 +423,8 @@ class Settings(BaseSettings):
 
         # Configure auto-cleanup
         cleanup_map = {
+            "local": True,  # Aggressive cleanup in local
             "dev": True,  # Aggressive cleanup in dev
-            "test": True,  # Aggressive cleanup in test
             "stage": True,  # Moderate cleanup in stage
             "prod": False,  # No auto-cleanup in prod (manual only)
         }
@@ -489,14 +490,19 @@ class Settings(BaseSettings):
         return self.environment == "prod"
 
     @property
+    def is_local(self) -> bool:
+        """Check if running in local environment."""
+        return self.environment == "local"
+
+    @property
     def is_development(self) -> bool:
-        """Check if running in development."""
+        """Check if running in development (team) environment."""
         return self.environment == "dev"
 
     @property
-    def is_test(self) -> bool:
-        """Check if running in test."""
-        return self.environment == "test"
+    def is_stage(self) -> bool:
+        """Check if running in staging environment."""
+        return self.environment == "stage"
 
     @property
     def show_docs(self) -> bool:
@@ -542,34 +548,26 @@ class Settings(BaseSettings):
         """
         Get environment-specific Redis DB number.
 
-        Uses different DB ranges for each environment:
-        - dev: 0-2
-        - test: 3-5
-        - stage: 6-8
-        - prod: 9-11
+        Uses single dedicated DB per environment:
+        - local: 3
+        - dev: 0
+        - stage: 1
+        - prod: 2
 
         Examples:
-            >>> settings.get_redis_db("cache")
+            >>> settings.get_redis_db("default")
             0  # In dev environment
-            6  # In stage environment
+            1  # In stage environment
+            3  # In local environment
         """
-        env_offsets = {
+        env_db_map = {
+            "local": 3,
             "dev": 0,
-            "test": 3,
-            "stage": 6,
-            "prod": 9,
+            "stage": 1,
+            "prod": 2,
         }
 
-        purpose_offsets = {
-            "default": 0,
-            "cache": 1,
-            "queue": 2,
-        }
-
-        base_offset = env_offsets.get(self.environment, 0)
-        purpose_offset = purpose_offsets.get(purpose, 0)
-
-        return base_offset + purpose_offset
+        return env_db_map.get(self.environment, 0)
 
 
 # Global settings instance
