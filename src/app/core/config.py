@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     web_search_provider: Literal["serper", "openrouter"] = Field(default="openrouter")
     serper_api_key: str | None = Field(default=None)
     # OpenRouter Search Configuration (when WEB_SEARCH_PROVIDER=openrouter)
-    web_search_model: str = Field(default="perplexity/sonar")
+    web_search_model: str = Field(default="openai/gpt-4o-mini-search-preview")
     web_search_temperature: float = Field(default=0.3)
     web_search_max_tokens: int = Field(default=4096)
     # Search context size for native search (low, medium, high)
@@ -134,11 +134,11 @@ class Settings(BaseSettings):
     track_user_ids: bool = Field(default=True)  # Send user parameter to OpenRouter
 
     # Image Generation
-    image_generation_enabled: bool = Field(default=False)
+    image_generation_enabled: bool = Field(default=True)
     image_generation_models: list[str] = Field(
-        default_factory=lambda: ["google/gemini-2.5-flash-image-preview"]
+        default_factory=lambda: ["openai/gpt-5-image", "google/gemini-2.5-flash-image"]
     )
-    image_storage_type: Literal["database", "s3", "local"] = Field(default="database")
+    image_storage_type: Literal["database", "s3", "local", "minio"] = Field(default="minio")
     image_max_size_mb: int = Field(default=10)
 
     # Structured Outputs
@@ -169,8 +169,8 @@ class Settings(BaseSettings):
 
     # Guardrails
     guardrails_enabled: bool = Field(default=True)
-    guardrails_llm_provider: str = Field(default="openai")
-    guardrails_llm_model: str = Field(default="gpt-4o-mini")
+    guardrails_llm_provider: str = Field(default="openrouter")
+    guardrails_llm_model: str = Field(default="openrouter/auto")  # Auto-select best model with cost/performance tradeoff
 
     # Logging (Standard v2.0)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="DEBUG")
@@ -181,7 +181,7 @@ class Settings(BaseSettings):
     langfuse_enabled: bool = Field(default=False)
     langfuse_public_key: str | None = Field(default=None)
     langfuse_secret_key: str | None = Field(default=None)
-    langfuse_host: str = Field(default="http://localhost:3000")
+    langfuse_host: str = Field(default="https://cloud.langfuse.com")
 
     # Rate Limiting
     rate_limit_anonymous: int = Field(default=5)
@@ -277,8 +277,8 @@ class Settings(BaseSettings):
     asr_max_audio_duration_seconds: int = Field(default=600)  # 10 minutes
     google_asr_credentials_path: str | None = Field(default=None)  # Path to JSON credentials
 
-    # Gemini ASR Settings
-    gemini_model: str = Field(default="gemini-2.0-flash-exp")  # Gemini model for ASR
+    # Gemini ASR Settings (when asr_provider=gemini)
+    gemini_asr_model: str = Field(default="gemini-2.0-flash-exp")  # Gemini model for audio transcription
 
     # Environment-Specific Settings
     environment_data_retention_days: int = Field(

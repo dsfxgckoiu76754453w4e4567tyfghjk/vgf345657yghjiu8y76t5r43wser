@@ -33,7 +33,7 @@ class ASRService:
         elif self.provider == "gemini":
             # Gemini client will be initialized on-demand
             self.gemini_api_key = getattr(settings, "gemini_api_key", None)
-            self.gemini_model = getattr(settings, "gemini_model", "gemini-2.0-flash-exp")
+            self.gemini_asr_model = getattr(settings, "gemini_asr_model", "gemini-2.0-flash-exp")
 
     # ========================================================================
     # Speech-to-Text Transcription
@@ -299,7 +299,7 @@ class ASRService:
             prompt = f"Generate a transcript of the speech in {language_name}."
 
             # Use appropriate model
-            model_name = model or self.gemini_model
+            model_name = model or self.gemini_asr_model
 
             if size_mb < 20:
                 # Inline data for small files (<20MB)
@@ -559,7 +559,7 @@ class ASRService:
                     return {
                         "healthy": True,
                         "provider": "gemini",
-                        "model": self.gemini_model,
+                        "model": self.gemini_asr_model,
                     }
                 except ImportError:
                     return {
