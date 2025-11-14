@@ -1,10 +1,10 @@
 # ============================================================================
 # Multi-stage Dockerfile for Shia Islamic Chatbot
-# Optimized for production deployment with minimal image size
+# Optimized with uv for blazing-fast dependency installation
 # ============================================================================
 
 # ============================================================================
-# Stage 1: Builder - Install dependencies and compile
+# Stage 1: Builder - Install dependencies with uv
 # ============================================================================
 FROM python:3.11-slim AS builder
 
@@ -19,24 +19,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-ENV POETRY_VERSION=1.8.0 \
-    POETRY_HOME="/opt/poetry" \
-    POETRY_VIRTUALENVS_IN_PROJECT=true \
-    POETRY_NO_INTERACTION=1
+# Install uv (blazing fast Python package installer)
+ENV UV_VERSION=0.4.29 \
+    UV_SYSTEM_PYTHON=1 \
+    UV_COMPILE_BYTECODE=1 \
+    VIRTUAL_ENV=/app/.venv
 
-RUN curl -sSL https://install.python-poetry.org | python3 - \
-    && ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && ln -s /root/.cargo/bin/uv /usr/local/bin/uv
 
-# Copy only dependency files for better caching
-COPY pyproject.toml poetry.lock* ./
+# Create virtual environment
+RUN python -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Install dependencies only (no dev dependencies in production)
+# Copy dependency files
+COPY pyproject.toml ./
+
+# Install dependencies with uv (10-100x faster than pip/poetry)
 ARG INSTALL_DEV=false
 RUN if [ "$INSTALL_DEV" = "true" ]; then \
-        poetry install --no-root --with dev; \
+        uv pip install -e ".[dev]"; \
     else \
-        poetry install --no-root --only main; \
+        uv pip install -e .; \
     fi
 
 # ============================================================================
@@ -61,6 +65,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY src/ ./src/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
+COPY pyproject.toml ./
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser \
@@ -76,7 +81,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
 # Expose port
 EXPOSE 8000
 
-# Enhanced health check using the new /health endpoint
+# Enhanced health check using the /health endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health?check_services=false || exit 1
 
@@ -89,6 +94,10 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--worker
 FROM runtime AS development
 
 USER root
+
+# Install uv for development
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && ln -s /root/.cargo/bin/uv /usr/local/bin/uv
 
 # Copy dev dependencies from builder
 COPY --from=builder /app/.venv /app/.venv

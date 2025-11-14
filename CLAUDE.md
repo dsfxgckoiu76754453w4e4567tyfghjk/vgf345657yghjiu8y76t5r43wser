@@ -148,7 +148,7 @@ All 4 environments run on the **SAME VPS** with complete isolation:
 ├── docker-compose.app.prod.yml # PROD environment
 ├── Dockerfile                  # Application Docker image
 ├── Makefile                    # Development commands
-├── pyproject.toml              # Poetry dependencies & tool configs
+├── pyproject.toml              # uv dependencies & tool configs
 ├── alembic.ini                 # Alembic configuration
 ├── .env.example                # Environment variables template
 ├── .pre-commit-config.yaml     # Pre-commit hooks
@@ -181,12 +181,12 @@ export MINIO_BUCKET_PREFIX=local-
 export TEMPORAL_TASK_QUEUE=wisqu-local-queue
 
 # 5. Run database migrations
-poetry run alembic upgrade head
+uv run alembic upgrade head
 
 # 6. Start development server
 make dev
 # or
-poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8003
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8003
 ```
 
 ### Environment Promotion Flow
@@ -400,13 +400,13 @@ tests/
 make test
 
 # Run specific test file
-poetry run pytest tests/unit/test_auth_service.py
+uv run pytest tests/unit/test_auth_service.py
 
 # Run with verbose output
-poetry run pytest -v
+uv run pytest -v
 
 # Run with coverage report
-poetry run pytest --cov=app --cov-report=html
+uv run pytest --cov=app --cov-report=html
 ```
 
 ### Writing Tests
@@ -472,10 +472,10 @@ docker compose -f docker-compose.base.yml -f docker-compose.app.prod.yml up -d -
 ```bash
 # Create new migration (LOCAL)
 export DATABASE_NAME=shia_chatbot_local
-poetry run alembic revision --autogenerate -m "add new table"
+uv run alembic revision --autogenerate -m "add new table"
 
 # Run migrations (LOCAL)
-poetry run alembic upgrade head
+uv run alembic upgrade head
 
 # Run migrations (DEV - deployed)
 docker exec shia-chatbot-dev-app alembic upgrade head
@@ -527,7 +527,7 @@ docker exec shia-chatbot-prod-app alembic upgrade head
 - **Langfuse**: LLM-specific tracing
 
 ### Development Tools
-- **Poetry**: Dependency management
+- **uv**: Blazing-fast dependency management
 - **Ruff**: Fast Python linter
 - **Black**: Code formatter
 - **isort**: Import sorter
@@ -543,7 +543,7 @@ docker exec shia-chatbot-prod-app alembic upgrade head
 
 ### Configuration
 - `.env.example`: Environment variables template (311 lines, comprehensive)
-- `pyproject.toml`: Poetry dependencies + tool configurations
+- `pyproject.toml`: uv dependencies + tool configurations
 - `alembic.ini`: Database migration configuration
 - `.pre-commit-config.yaml`: Pre-commit hooks configuration
 
@@ -657,8 +657,8 @@ make shell                        # Open Python shell
 
 # Testing
 make test                         # Run all tests
-poetry run pytest -k test_name    # Run specific test
-poetry run pytest --lf            # Run last failed tests
+uv run pytest -k test_name    # Run specific test
+uv run pytest --lf            # Run last failed tests
 
 # Code Quality
 make lint                         # Run all linters
@@ -668,8 +668,8 @@ make security                     # Security checks
 # Database
 make db-migrate                   # Create migration
 make db-upgrade                   # Run migrations
-poetry run alembic current        # Check current version
-poetry run alembic history        # View migration history
+uv run alembic current        # Check current version
+uv run alembic history        # View migration history
 
 # Docker
 make docker-local                 # Start infrastructure only
@@ -737,7 +737,7 @@ make minio-ui                     # Open MinIO console (port 9001)
 - **OpenRouter Docs**: https://openrouter.ai/docs
 - **Temporal Docs**: https://docs.temporal.io/
 - **Qdrant Docs**: https://qdrant.tech/documentation/
-- **Poetry Docs**: https://python-poetry.org/docs/
+- **uv Docs**: https://github.com/astral-sh/uv
 
 ---
 

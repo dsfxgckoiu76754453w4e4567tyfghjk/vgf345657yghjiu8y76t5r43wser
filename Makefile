@@ -5,7 +5,7 @@
 
 # Variables
 PYTHON := python3
-POETRY := poetry
+UV := uv
 DOCKER_COMPOSE := docker compose
 APP_NAME := shia-chatbot
 DOCKER_IMAGE := $(APP_NAME):latest
@@ -25,17 +25,17 @@ help: ## Show this help message
 # Setup & Installation
 # ============================================================================
 
-install: ## Install all dependencies using Poetry
-	$(POETRY) install
+install: ## Install all dependencies using uv
+	$(UV) sync
 	@echo "✅ Dependencies installed successfully"
 
 install-dev: ## Install dependencies including dev tools
-	$(POETRY) install --with dev
+	$(UV) sync --extra dev
 	@echo "✅ Development dependencies installed"
 
 install-hooks: ## Install pre-commit git hooks
-	$(POETRY) run pre-commit install
-	$(POETRY) run pre-commit install --hook-type commit-msg
+	$(UV) run pre-commit install
+	$(UV) run pre-commit install --hook-type commit-msg
 	@echo "✅ Pre-commit hooks installed"
 
 setup: install-dev install-hooks docker-up db-upgrade ## Complete project setup (install + hooks + docker + migrations)
@@ -46,13 +46,13 @@ setup: install-dev install-hooks docker-up db-upgrade ## Complete project setup 
 # ============================================================================
 
 dev: ## Start development server with hot reload
-	$(POETRY) run uvicorn $(MODULE_NAME).main:app --reload --host 0.0.0.0 --port 8000
+	$(UV) run uvicorn $(MODULE_NAME).main:app --reload --host 0.0.0.0 --port 8000
 
 dev-docker: docker-up ## Start all services in Docker and run dev server
-	$(POETRY) run uvicorn $(MODULE_NAME).main:app --reload --host 0.0.0.0 --port 8000
+	$(UV) run uvicorn $(MODULE_NAME).main:app --reload --host 0.0.0.0 --port 8000
 
 shell: ## Open interactive Python shell with app context
-	$(POETRY) run python
+	$(UV) run python
 
 # ============================================================================
 # Temporal Workflows - Async Task Processing
@@ -281,7 +281,7 @@ docker-promote-dev-stage: ## Promote approved data from DEV to STAGE
 	@read -p "Continue? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		POETRY run python scripts/promote.py --source dev --target stage; \
+		$(UV) run python scripts/promote.py --source dev --target stage; \
 	else \
 		echo "❌ Promotion cancelled"; \
 	fi
@@ -292,7 +292,7 @@ docker-promote-stage-prod: ## Promote approved data from STAGE to PROD
 	@read -p "Are you absolutely sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		POETRY run python scripts/promote.py --source stage --target prod; \
+		$(UV) run python scripts/promote.py --source stage --target prod; \
 	else \
 		echo "❌ Promotion cancelled"; \
 	fi
@@ -336,20 +336,20 @@ docker-backup: ## Backup all Docker volumes
 # ============================================================================
 
 db-migrate: ## Create a new Alembic migration (usage: make db-migrate MESSAGE="description")
-	$(POETRY) run alembic revision --autogenerate -m "$(MESSAGE)"
+	$(UV) run alembic revision --autogenerate -m "$(MESSAGE)"
 	@echo "✅ Migration created"
 
 db-upgrade: ## Apply all pending migrations
-	$(POETRY) run alembic upgrade head
+	$(UV) run alembic upgrade head
 	@echo "✅ Database upgraded to latest version"
 
 db-downgrade: ## Rollback last migration
-	$(POETRY) run alembic downgrade -1
+	$(UV) run alembic downgrade -1
 	@echo "✅ Database downgraded by 1 version"
 
 db-reset: ## Reset database (downgrade all, upgrade all)
-	$(POETRY) run alembic downgrade base
-	$(POETRY) run alembic upgrade head
+	$(UV) run alembic downgrade base
+	$(UV) run alembic upgrade head
 	@echo "✅ Database reset complete"
 
 db-shell: ## Open PostgreSQL shell
@@ -373,32 +373,32 @@ db-restore: ## Restore database from dump (usage: make db-restore FILE=backups/d
 # ============================================================================
 
 test: ## Run all tests with coverage
-	$(POETRY) run pytest $(TEST_DIR)/ -v --cov=$(SRC_DIR) --cov-report=term-missing --cov-report=html --cov-report=xml
+	$(UV) run pytest $(TEST_DIR)/ -v --cov=$(SRC_DIR) --cov-report=term-missing --cov-report=html --cov-report=xml
 	@echo "✅ Tests completed. Coverage report: htmlcov/index.html"
 
 test-unit: ## Run unit tests only
-	$(POETRY) run pytest $(TEST_DIR)/unit/ -v --cov=$(SRC_DIR) --cov-report=term-missing
+	$(UV) run pytest $(TEST_DIR)/unit/ -v --cov=$(SRC_DIR) --cov-report=term-missing
 	@echo "✅ Unit tests completed"
 
 test-integration: ## Run integration tests only
-	$(POETRY) run pytest $(TEST_DIR)/integration/ -v --cov=$(SRC_DIR) --cov-report=term-missing
+	$(UV) run pytest $(TEST_DIR)/integration/ -v --cov=$(SRC_DIR) --cov-report=term-missing
 	@echo "✅ Integration tests completed"
 
 test-e2e: ## Run end-to-end tests only
-	$(POETRY) run pytest $(TEST_DIR)/e2e/ -v
+	$(UV) run pytest $(TEST_DIR)/e2e/ -v
 	@echo "✅ End-to-end tests completed"
 
 test-watch: ## Run tests in watch mode (re-run on file changes)
-	$(POETRY) run ptw $(TEST_DIR)/ -- -v
+	$(UV) run ptw $(TEST_DIR)/ -- -v
 
 test-failed: ## Re-run only failed tests from last run
-	$(POETRY) run pytest $(TEST_DIR)/ --lf -v
+	$(UV) run pytest $(TEST_DIR)/ --lf -v
 
 test-verbose: ## Run tests with verbose output and no capture
-	$(POETRY) run pytest $(TEST_DIR)/ -vv -s --cov=$(SRC_DIR)
+	$(UV) run pytest $(TEST_DIR)/ -vv -s --cov=$(SRC_DIR)
 
 test-markers: ## Show all available pytest markers
-	$(POETRY) run pytest --markers
+	$(UV) run pytest --markers
 
 coverage: test ## Generate and open HTML coverage report
 	@echo "📊 Opening coverage report..."
@@ -406,84 +406,84 @@ coverage: test ## Generate and open HTML coverage report
 
 coverage-report: ## Generate coverage report without running tests
 	@echo "📊 Coverage Summary:"
-	@$(POETRY) run coverage report -m
+	@$(UV) run coverage report -m
 
 # ============================================================================
 # Code Quality & Linting
 # ============================================================================
 
 format: ## Format code with Black and isort
-	$(POETRY) run black $(SRC_DIR)/ $(TEST_DIR)/
-	$(POETRY) run isort $(SRC_DIR)/ $(TEST_DIR)/
+	$(UV) run black $(SRC_DIR)/ $(TEST_DIR)/
+	$(UV) run isort $(SRC_DIR)/ $(TEST_DIR)/
 	@echo "✅ Code formatted with Black and isort"
 
 format-check: ## Check code formatting without making changes
-	$(POETRY) run black --check $(SRC_DIR)/ $(TEST_DIR)/
-	$(POETRY) run isort --check-only $(SRC_DIR)/ $(TEST_DIR)/
+	$(UV) run black --check $(SRC_DIR)/ $(TEST_DIR)/
+	$(UV) run isort --check-only $(SRC_DIR)/ $(TEST_DIR)/
 	@echo "✅ Format check completed"
 
 lint: ## Run all linters (flake8, mypy, pylint)
 	@echo "Running flake8..."
-	$(POETRY) run flake8 $(SRC_DIR)/ $(TEST_DIR)/ --max-line-length=100 --statistics
+	$(UV) run flake8 $(SRC_DIR)/ $(TEST_DIR)/ --max-line-length=100 --statistics
 	@echo ""
 	@echo "Running mypy..."
-	$(POETRY) run mypy $(SRC_DIR)/ --ignore-missing-imports --show-error-codes
+	$(UV) run mypy $(SRC_DIR)/ --ignore-missing-imports --show-error-codes
 	@echo ""
 	@echo "Running pylint..."
-	$(POETRY) run pylint $(SRC_DIR)/ --max-line-length=100 || true
+	$(UV) run pylint $(SRC_DIR)/ --max-line-length=100 || true
 	@echo "✅ Linting completed"
 
 lint-flake8: ## Run flake8 only
-	$(POETRY) run flake8 $(SRC_DIR)/ $(TEST_DIR)/ --max-line-length=100 --statistics
+	$(UV) run flake8 $(SRC_DIR)/ $(TEST_DIR)/ --max-line-length=100 --statistics
 
 lint-mypy: ## Run mypy type checking only
-	$(POETRY) run mypy $(SRC_DIR)/ --ignore-missing-imports --show-error-codes
+	$(UV) run mypy $(SRC_DIR)/ --ignore-missing-imports --show-error-codes
 
 lint-pylint: ## Run pylint only
-	$(POETRY) run pylint $(SRC_DIR)/ --max-line-length=100
+	$(UV) run pylint $(SRC_DIR)/ --max-line-length=100
 
 security: ## Run security checks (bandit, safety, detect-secrets)
 	@echo "Running Bandit security scan..."
-	$(POETRY) run bandit -r $(SRC_DIR)/ -c pyproject.toml || true
+	$(UV) run bandit -r $(SRC_DIR)/ -c pyproject.toml || true
 	@echo ""
 	@echo "Running Safety dependency check..."
-	$(POETRY) run safety check --json || true
+	$(UV) run safety check --json || true
 	@echo ""
 	@echo "Running detect-secrets scan..."
-	$(POETRY) run detect-secrets scan --baseline .secrets.baseline || true
+	$(UV) run detect-secrets scan --baseline .secrets.baseline || true
 	@echo "✅ Security checks completed"
 
 security-bandit: ## Run Bandit security scan only
-	$(POETRY) run bandit -r $(SRC_DIR)/ -c pyproject.toml
+	$(UV) run bandit -r $(SRC_DIR)/ -c pyproject.toml
 
 security-safety: ## Run Safety dependency vulnerability check only
-	$(POETRY) run safety check --json
+	$(UV) run safety check --json
 
 security-secrets: ## Scan for hardcoded secrets
-	$(POETRY) run detect-secrets scan --baseline .secrets.baseline
+	$(UV) run detect-secrets scan --baseline .secrets.baseline
 
 security-update-baseline: ## Update secrets baseline (after reviewing detected secrets)
-	$(POETRY) run detect-secrets scan --update .secrets.baseline
+	$(UV) run detect-secrets scan --update .secrets.baseline
 	@echo "✅ Secrets baseline updated"
 
 complexity: ## Check code complexity with Radon
 	@echo "Cyclomatic Complexity (CC):"
-	$(POETRY) run radon cc $(SRC_DIR)/ -a -s
+	$(UV) run radon cc $(SRC_DIR)/ -a -s
 	@echo ""
 	@echo "Maintainability Index (MI):"
-	$(POETRY) run radon mi $(SRC_DIR)/ -s
+	$(UV) run radon mi $(SRC_DIR)/ -s
 	@echo ""
 	@echo "Raw Metrics:"
-	$(POETRY) run radon raw $(SRC_DIR)/ -s
+	$(UV) run radon raw $(SRC_DIR)/ -s
 
 docstrings: ## Check docstring coverage with interrogate
-	$(POETRY) run interrogate $(SRC_DIR)/ -v --fail-under=80
+	$(UV) run interrogate $(SRC_DIR)/ -v --fail-under=80
 
 pre-commit-run: ## Run all pre-commit hooks on all files
-	$(POETRY) run pre-commit run --all-files
+	$(UV) run pre-commit run --all-files
 
 pre-commit-update: ## Update pre-commit hooks to latest versions
-	$(POETRY) run pre-commit autoupdate
+	$(UV) run pre-commit autoupdate
 	@echo "✅ Pre-commit hooks updated"
 
 check: format lint security test ## Run all checks (format, lint, security, test)
@@ -541,7 +541,7 @@ deploy-prod: ## Deploy to production (requires manual confirmation)
 	fi
 
 run-prod: ## Run production server (not for actual production, use docker-compose)
-	$(POETRY) run uvicorn $(MODULE_NAME).main:app --host 0.0.0.0 --port 8000 --workers 4
+	$(UV) run uvicorn $(MODULE_NAME).main:app --host 0.0.0.0 --port 8000 --workers 4
 
 # ============================================================================
 # Monitoring & Observability
@@ -568,15 +568,15 @@ redis-monitor: ## Monitor Redis commands in real-time
 # ============================================================================
 
 docs-serve: ## Serve documentation locally with hot reload
-	$(POETRY) run mkdocs serve -a 0.0.0.0:8001
+	$(UV) run mkdocs serve -a 0.0.0.0:8001
 	@echo "📚 Documentation available at: http://localhost:8001"
 
 docs-build: ## Build documentation static site
-	$(POETRY) run mkdocs build
+	$(UV) run mkdocs build
 	@echo "✅ Documentation built in ./site/"
 
 docs-deploy: ## Deploy documentation to GitHub Pages
-	$(POETRY) run mkdocs gh-deploy --force
+	$(UV) run mkdocs gh-deploy --force
 	@echo "✅ Documentation deployed to GitHub Pages"
 
 # ============================================================================
@@ -591,36 +591,36 @@ env-example: ## Create .env.example from current .env (DO NOT commit secrets)
 		echo "❌ .env file not found"; \
 	fi
 
-requirements: ## Export requirements.txt from Poetry
-	$(POETRY) export -f requirements.txt --output requirements.txt --without-hashes
+requirements: ## Export requirements.txt from uv
+	$(UV) pip compile pyproject.toml -o requirements.txt
 	@echo "✅ requirements.txt generated"
 
 requirements-dev: ## Export requirements-dev.txt including dev dependencies
-	$(POETRY) export -f requirements.txt --output requirements-dev.txt --without-hashes --with dev
+	$(UV) pip compile pyproject.toml --extra dev -o requirements-dev.txt
 	@echo "✅ requirements-dev.txt generated"
 
 update: ## Update all dependencies
-	$(POETRY) update
+	$(UV) sync --upgrade
 	@echo "✅ Dependencies updated"
 
 update-pre-commit: ## Update pre-commit hooks
-	$(POETRY) run pre-commit autoupdate
+	$(UV) run pre-commit autoupdate
 	@echo "✅ Pre-commit hooks updated"
 
 version: ## Show application version
-	@$(POETRY) version
+	@python -c "import tomlkit; f=open("pyproject.toml"); d=tomlkit.load(f); print(d["project"]["version"]); f.close()"
 
 version-bump-patch: ## Bump patch version (1.0.0 -> 1.0.1)
-	$(POETRY) version patch
-	@echo "✅ Version bumped to $$($(POETRY) version -s)"
+	python -c "import tomlkit; f=open("pyproject.toml"); d=tomlkit.load(f); print(d["project"]["version"]); f.close()" patch
+	@echo "✅ Version bumped to $$(python -c "import tomlkit; f=open("pyproject.toml"); d=tomlkit.load(f); print(d["project"]["version"]); f.close()" -s)"
 
 version-bump-minor: ## Bump minor version (1.0.0 -> 1.1.0)
-	$(POETRY) version minor
-	@echo "✅ Version bumped to $$($(POETRY) version -s)"
+	python -c "import tomlkit; f=open("pyproject.toml"); d=tomlkit.load(f); print(d["project"]["version"]); f.close()" minor
+	@echo "✅ Version bumped to $$(python -c "import tomlkit; f=open("pyproject.toml"); d=tomlkit.load(f); print(d["project"]["version"]); f.close()" -s)"
 
 version-bump-major: ## Bump major version (1.0.0 -> 2.0.0)
-	$(POETRY) version major
-	@echo "✅ Version bumped to $$($(POETRY) version -s)"
+	python -c "import tomlkit; f=open("pyproject.toml"); d=tomlkit.load(f); print(d["project"]["version"]); f.close()" major
+	@echo "✅ Version bumped to $$(python -c "import tomlkit; f=open("pyproject.toml"); d=tomlkit.load(f); print(d["project"]["version"]); f.close()" -s)"
 
 # ============================================================================
 # CI/CD Simulation

@@ -34,3 +34,4 @@ XXX-short-descriptive-title.md
 | [001](001-initial-architecture.md) | Initial Architecture Setup | Accepted | 2025-01-13 |
 | [002](002-openrouter-llm-provider.md) | OpenRouter as Primary LLM Provider | Accepted | 2025-01-13 |
 | [003](003-temporal-workflow-engine.md) | Temporal Replaces Celery | Accepted | 2025-01-14 |
+| [004](004-uv-package-manager.md) | Migrate to uv Package Manager | Accepted | 2025-01-14 |
