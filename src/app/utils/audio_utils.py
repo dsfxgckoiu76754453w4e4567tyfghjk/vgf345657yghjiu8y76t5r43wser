@@ -174,7 +174,7 @@ def extract_audio_metadata(audio_data: bytes | BinaryIO, audio_format: str = "mp
     except ImportError:
         logger.warning(
             "mutagen_not_available",
-            message="Install mutagen for audio metadata: pip install mutagen"
+            message="Install mutagen for audio metadata: uv add mutagen"
         )
         # Fallback to basic duration extraction
         metadata["duration_seconds"] = get_audio_duration(audio_data, audio_format)

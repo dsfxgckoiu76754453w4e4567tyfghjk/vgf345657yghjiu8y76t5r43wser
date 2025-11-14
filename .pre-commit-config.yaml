@@ -162,7 +162,7 @@ repos:
           - .secrets.baseline
         exclude: |
           (?x)^(
-            poetry.lock|
+            uv.lock|
             package-lock.json|
             .*\.ipynb$|
             tests/fixtures/.*
@@ -216,7 +216,7 @@ repos:
         name: Lint Dockerfiles
         args:
           - --ignore=DL3008  # Pin apt-get versions
-          - --ignore=DL3013  # Pin pip versions (handled by poetry)
+          - --ignore=DL3013  # Pin pip versions (handled by uv)
         files: Dockerfile.*
 
   # ============================================================================
@@ -274,20 +274,6 @@ repos:
         stages: [commit-msg]
 
   # ============================================================================
-  # Poetry Check
-  # ============================================================================
-  - repo: https://github.com/python-poetry/poetry
-    rev: 1.7.0
-    hooks:
-      - id: poetry-check
-        name: Validate Poetry configuration
-        files: pyproject.toml
-
-      - id: poetry-lock
-        name: Check Poetry lock file
-        files: pyproject.toml
-
-  # ============================================================================
   # Local Hooks (custom scripts)
   # ============================================================================
   - repo: local
@@ -326,7 +312,7 @@ repos:
       # Run pytest on changed test files (optional, can be slow)
       # - id: pytest-check
       #   name: Run tests on changed files
-      #   entry: poetry run pytest
+      #   entry: uv run pytest
       #   language: system
       #   files: ^tests/.*\.py$
       #   pass_filenames: true

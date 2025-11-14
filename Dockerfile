@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (blazing fast Python package installer)
-ENV UV_VERSION=0.4.29 \
+ENV UV_VERSION=0.4.30 \
     UV_SYSTEM_PYTHON=1 \
     UV_COMPILE_BYTECODE=1 \
     VIRTUAL_ENV=/app/.venv

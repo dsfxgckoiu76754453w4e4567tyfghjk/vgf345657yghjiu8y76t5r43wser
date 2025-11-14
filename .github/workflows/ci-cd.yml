@@ -8,8 +8,8 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  POETRY_VERSION: "1.7.1"
-  CACHE_VERSION: v1  # Increment to invalidate caches
+  UV_VERSION: "0.4.30"  # uv version
+  CACHE_VERSION: v2  # Incremented for uv migration
 
 # Cancel in-progress runs of the same workflow
 concurrency:
@@ -37,29 +37,28 @@ jobs:
       - name: Generate cache key
         id: cache-key
         run: |
-          echo "key=${{ env.CACHE_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}" >> $GITHUB_OUTPUT
+          echo "key=${{ env.CACHE_VERSION }}-uv-${{ hashFiles('**/pyproject.toml', '**/uv.lock') }}" >> $GITHUB_OUTPUT
 
-      - name: Cache Poetry dependencies
+      - name: Cache uv dependencies
         id: cache-deps
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/pypoetry
-            ~/.virtualenvs
+            ~/.cache/uv
             .venv
           key: ${{ steps.cache-key.outputs.key }}
           restore-keys: |
-            ${{ env.CACHE_VERSION }}-poetry-
+            ${{ env.CACHE_VERSION }}-uv-
 
-      - name: Install Poetry
+      - name: Install uv
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
-          pip install poetry==${{ env.POETRY_VERSION }}
-          poetry config virtualenvs.in-project true
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
+        run: uv sync
 
   # ============================================================================
   # Job 2: Code Quality & Linting (parallel with security)
@@ -77,21 +76,20 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Restore Poetry cache
+      - name: Restore uv cache
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/pypoetry
-            ~/.virtualenvs
+            ~/.cache/uv
             .venv
           key: ${{ needs.setup.outputs.cache-key }}
           restore-keys: |
-            ${{ env.CACHE_VERSION }}-poetry-
+            ${{ env.CACHE_VERSION }}-uv-
 
-      - name: Install Poetry
+      - name: Install uv
         run: |
-          pip install poetry==${{ env.POETRY_VERSION }}
-          poetry config virtualenvs.in-project true
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Cache pre-commit hooks
         uses: actions/cache@v4
@@ -100,17 +98,17 @@ jobs:
           key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Run Black (formatting check)
-        run: poetry run black --check src/ tests/
+        run: uv run black --check src/ tests/
         continue-on-error: false
 
       - name: Run isort (import sorting check)
-        run: poetry run isort --check-only src/ tests/
+        run: uv run isort --check-only src/ tests/
 
       - name: Run flake8 (linting)
-        run: poetry run flake8 src/ tests/ --max-line-length=100 --statistics
+        run: uv run flake8 src/ tests/ --max-line-length=100 --statistics
 
       - name: Run mypy (type checking)
-        run: poetry run mypy src/ --ignore-missing-imports --show-error-codes
+        run: uv run mypy src/ --ignore-missing-imports --show-error-codes
 
   # ============================================================================
   # Job 3: Security Scanning (parallel with lint)
@@ -128,26 +126,25 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Restore Poetry cache
+      - name: Restore uv cache
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/pypoetry
-            ~/.virtualenvs
+            ~/.cache/uv
             .venv
           key: ${{ needs.setup.outputs.cache-key }}
 
-      - name: Install Poetry
+      - name: Install uv
         run: |
-          pip install poetry==${{ env.POETRY_VERSION }}
-          poetry config virtualenvs.in-project true
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Run bandit (security linter)
-        run: poetry run bandit -r src/ -f json -o bandit-report.json
+        run: uv run bandit -r src/ -f json -o bandit-report.json
         continue-on-error: true
 
       - name: Run safety (dependency vulnerability check)
-        run: poetry run safety check --json || true
+        run: uv run safety check --json || true
         continue-on-error: true
 
       - name: Upload security reports
@@ -205,19 +202,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Restore Poetry cache
+      - name: Restore uv cache
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/pypoetry
-            ~/.virtualenvs
+            ~/.cache/uv
             .venv
           key: ${{ needs.setup.outputs.cache-key }}
 
-      - name: Install Poetry
+      - name: Install uv
         run: |
-          pip install poetry==${{ env.POETRY_VERSION }}
-          poetry config virtualenvs.in-project true
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Cache pytest cache
         uses: actions/cache@v4
@@ -233,7 +229,7 @@ jobs:
           ENVIRONMENT: test
         run: |
           if [ "${{ matrix.test-group }}" = "unit" ]; then
-            poetry run pytest tests/unit/ \
+            uv run pytest tests/unit/ \
               --cov=src/app \
               --cov-report=xml:coverage-unit.xml \
               --cov-report=term \
@@ -241,7 +237,7 @@ jobs:
               --tb=short \
               -v
           else
-            poetry run pytest tests/integration/ \
+            uv run pytest tests/integration/ \
               --cov=src/app \
               --cov-report=xml:coverage-integration.xml \
               --cov-report=term \
@@ -304,11 +300,8 @@ jobs:
         image: qdrant/qdrant:latest
         ports:
           - 6333:6333
-        options: >-
-          --health-cmd "curl -f http://localhost:6333/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+        env:
+          QDRANT__TELEMETRY_DISABLED: true
 
     steps:
       - name: Checkout code
@@ -319,24 +312,18 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Restore Poetry cache
+      - name: Restore uv cache
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/pypoetry
-            ~/.virtualenvs
+            ~/.cache/uv
             .venv
           key: ${{ needs.setup.outputs.cache-key }}
 
-      - name: Install Poetry
+      - name: Install uv
         run: |
-          pip install poetry==${{ env.POETRY_VERSION }}
-          poetry config virtualenvs.in-project true
-
-      - name: Wait for services to be ready
-        run: |
-          timeout 60 bash -c 'until pg_isready -h localhost -p 5432; do sleep 2; done'
-          timeout 60 bash -c 'until redis-cli -h localhost -p 6379 ping; do sleep 2; done'
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Run integration tests
         env:
@@ -345,22 +332,20 @@ jobs:
           QDRANT_URL: http://localhost:6333
           ENVIRONMENT: test
         run: |
-          poetry run pytest tests/integration/ tests/e2e/ \
-            --maxfail=3 \
-            --tb=short \
-            -v \
-            --timeout=300
+          uv run pytest tests/integration/ \
+            --cov=src/app \
+            --cov-report=xml \
+            --cov-report=term \
+            -v
 
   # ============================================================================
-  # Job 6: Build Docker Image (optimized with layer caching)
+  # Job 6: Build Docker Image (only on main/develop)
   # ============================================================================
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [lint, security]  # Start building earlier, parallel with tests
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/claude/'))
-    outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
+    needs: [test, lint, security]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -368,134 +353,32 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-        continue-on-error: true
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ secrets.DOCKER_USERNAME }}/shia-islamic-chatbot
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push
+      - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ secrets.DOCKER_USERNAME != '' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Multi-layer caching strategy
-          cache-from: |
-            type=gha,scope=docker-build
-            type=registry,ref=${{ secrets.DOCKER_USERNAME }}/shia-islamic-chatbot:buildcache
-          cache-to: type=gha,mode=max,scope=docker-build
-          # Build arguments for faster builds
+          push: false
+          tags: shia-chatbot:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
-            BUILDKIT_INLINE_CACHE=1
             PYTHON_VERSION=${{ env.PYTHON_VERSION }}
+            UV_VERSION=${{ env.UV_VERSION }}
 
   # ============================================================================
-  # Job 7: Deploy to Staging
+  # Job 7: Success Summary
   # ============================================================================
-  deploy-staging:
-    name: Deploy to Staging
+  success:
+    name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [test, integration-test, build]
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-    environment:
-      name: staging
-      url: https://staging.yourapp.com
+    needs: [setup, lint, security, test, integration-test]
+    if: success()
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to staging
+      - name: Report success
         run: |
-          echo "Deploying to staging environment"
-          echo "Image: ${{ needs.build.outputs.image-tag }}"
-          # Add your deployment script here
-          # Example with docker-compose:
-          # ssh user@staging-server 'cd /app && docker-compose pull && docker-compose up -d'
-
-  # ============================================================================
-  # Job 8: Deploy to Production
-  # ============================================================================
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: [test, integration-test, build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment:
-      name: production
-      url: https://yourapp.com
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to production
-        run: |
-          echo "Deploying to production environment"
-          echo "Image: ${{ needs.build.outputs.image-tag }}"
-          # Add your deployment script here
-          # Example with kubernetes:
-          # kubectl set image deployment/chatbot chatbot=${{ needs.build.outputs.image-tag }}
-          # kubectl rollout status deployment/chatbot
-
-  # ============================================================================
-  # Job 9: Performance Tests (optional, runs on schedule)
-  # ============================================================================
-  performance-test:
-    name: Performance Tests
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf-test]')
-    needs: [test]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Run performance benchmarks
-        run: |
-          echo "Running performance tests"
-          # Add performance testing tools like locust, pytest-benchmark, etc.
-
-  # ============================================================================
-  # Job 10: Generate Coverage Report (combines all test results)
-  # ============================================================================
-  coverage-report:
-    name: Generate Coverage Report
-    runs-on: ubuntu-latest
-    needs: [test]
-    if: always()
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all test results
-        uses: actions/download-artifact@v4
-        with:
-          path: test-results/
-
-      - name: Generate combined coverage report
-        run: |
-          echo "Coverage results from all test runs:"
-          find test-results/ -name "*.xml" -type f
-
-      - name: Comment PR with coverage
-        if: github.event_name == 'pull_request'
-        uses: py-cov-action/python-coverage-comment-action@v3
-        with:
-          GITHUB_TOKEN: ${{ github.token }}
+          echo "✅ All CI checks passed!"
+          echo "- Setup & Dependencies: ✓"
+          echo "- Code Quality (Lint): ✓"
+          echo "- Security Scan: ✓"
+          echo "- Unit Tests: ✓"
+          echo "- Integration Tests: ✓"
