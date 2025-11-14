@@ -53,8 +53,8 @@ class Settings(BaseSettings):
     # This ensures better security and configuration management
 
     # Redis (Single dedicated DB per environment)
-    # LOCAL: DB 3, DEV: DB 0, STAGE: DB 1, PROD: DB 2
-    redis_url: str = Field(default="redis://localhost:6379/3")
+    # Logical order: LOCAL: DB 0, DEV: DB 1, STAGE: DB 2, PROD: DB 3
+    redis_url: str = Field(default="redis://localhost:6379/0")
 
     # Qdrant
     qdrant_url: str = Field(default="http://localhost:6333")
@@ -73,10 +73,9 @@ class Settings(BaseSettings):
     google_client_secret: str | None = Field(default=None)
     google_redirect_uri: str = Field(default="http://localhost:8000/auth/google/callback")
 
-    # LLM Providers
+    # LLM Providers (Legacy - Optional if using OpenRouter)
     openai_api_key: str | None = Field(default=None)
     openai_org_id: str | None = Field(default=None)
-    anthropic_api_key: str | None = Field(default=None)
     google_api_key: str | None = Field(default=None)
     google_project_id: str | None = Field(default=None)
     google_location: str = Field(default="us-central1")
@@ -90,8 +89,9 @@ class Settings(BaseSettings):
     openrouter_model: str = Field(default="anthropic/claude-3.5-sonnet")
 
     # LLM Configuration (Used by LangGraph)
-    llm_provider: Literal["openrouter", "openai", "anthropic"] = Field(default="openrouter")
-    llm_model: str = Field(default="anthropic/claude-3.5-sonnet")
+    # Note: Use OpenRouter for Claude models (anthropic/claude-3.5-sonnet)
+    llm_provider: Literal["openrouter", "openai", "google"] = Field(default="openrouter")
+    llm_model: str = Field(default="anthropic/claude-3.5-sonnet")  # Via OpenRouter
     llm_temperature: float = Field(default=0.7)
     llm_max_tokens: int = Field(default=4096)
 
@@ -547,23 +547,23 @@ class Settings(BaseSettings):
         """
         Get environment-specific Redis DB number.
 
-        Uses single dedicated DB per environment:
-        - local: 3
-        - dev: 0
-        - stage: 1
-        - prod: 2
+        Uses single dedicated DB per environment (logical order):
+        - local: 0
+        - dev: 1
+        - stage: 2
+        - prod: 3
 
         Examples:
             >>> settings.get_redis_db("default")
-            0  # In dev environment
-            1  # In stage environment
-            3  # In local environment
+            0  # In local environment
+            1  # In dev environment
+            2  # In stage environment
         """
         env_db_map = {
-            "local": 3,
-            "dev": 0,
-            "stage": 1,
-            "prod": 2,
+            "local": 0,
+            "dev": 1,
+            "stage": 2,
+            "prod": 3,
         }
 
         return env_db_map.get(self.environment, 0)

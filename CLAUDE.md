@@ -49,10 +49,10 @@ All 4 environments run on the **SAME VPS** with complete isolation:
 
 | Environment | Port | Database | Redis DB | Qdrant Prefix | MinIO Prefix | Temporal Queue |
 |-------------|------|----------|----------|---------------|--------------|----------------|
-| **LOCAL** (Dev) | 8003 | `shia_chatbot_local` | 3 | `local_` | `local-` | `wisqu-local-queue` |
-| **DEV** (Team) | 8000 | `shia_chatbot_dev` | 0 | `dev_` | `dev-` | `wisqu-dev-queue` |
-| **STAGE** | 8001 | `shia_chatbot_stage` | 1 | `stage_` | `stage-` | `wisqu-stage-queue` |
-| **PROD** | 8002 | `shia_chatbot_prod` | 2 | `prod_` | `prod-` | `wisqu-prod-queue` |
+| **LOCAL** (Dev) | 8003 | `shia_chatbot_local` | 0 | `local_` | `local-` | `wisqu-local-queue` |
+| **DEV** (Team) | 8000 | `shia_chatbot_dev` | 1 | `dev_` | `dev-` | `wisqu-dev-queue` |
+| **STAGE** | 8001 | `shia_chatbot_stage` | 2 | `stage_` | `stage-` | `wisqu-stage-queue` |
+| **PROD** | 8002 | `shia_chatbot_prod` | 3 | `prod_` | `prod-` | `wisqu-prod-queue` |
 
 ### AI Architecture
 
