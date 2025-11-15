@@ -54,6 +54,28 @@ All 4 environments run on the **SAME VPS** with complete isolation:
 | **STAGE** | 8001 | `shia_chatbot_stage` | 2 | `stage_` | `stage-` | `wisqu-stage-queue` |
 | **PROD** | 8002 | `shia_chatbot_prod` | 3 | `prod_` | `prod-` | `wisqu-prod-queue` |
 
+**Auto-Configuration (Zero Manual Config):**
+
+All environment-specific values are **automatically computed** from the `ENVIRONMENT` variable:
+- Just set `ENVIRONMENT=local|dev|stage|prod`
+- Database name, Redis DB, Temporal queue, Qdrant prefix, and MinIO prefix are auto-computed
+- **No manual configuration needed** - eliminates human error
+
+Example `.env` (simplified):
+```bash
+ENVIRONMENT=local  # Change this to switch environments
+
+# Base values (environment auto-appended)
+DATABASE_NAME=shia_chatbot  # → shia_chatbot_local
+REDIS_HOST=localhost
+REDIS_PORT=6379
+# REDIS_DB auto-selected: 0 (local), 1 (dev), 2 (stage), 3 (prod)
+
+TEMPORAL_TASK_QUEUE=wisqu-queue  # → wisqu-local-queue
+# QDRANT_COLLECTION_PREFIX auto-computed: local_
+# MINIO_BUCKET_PREFIX auto-computed: local-
+```
+
 ### AI Architecture
 
 **2-Stage Retrieval Pipeline** (20-40% quality improvement):
@@ -173,12 +195,10 @@ make install-hooks
 # 3. Start infrastructure services (PostgreSQL, Redis, Qdrant, MinIO, etc.)
 make docker-local
 
-# 4. Set up environment variables for LOCAL
-export DATABASE_NAME=shia_chatbot_local
-export REDIS_DB=3
-export QDRANT_COLLECTION_PREFIX=local_
-export MINIO_BUCKET_PREFIX=local-
-export TEMPORAL_TASK_QUEUE=wisqu-local-queue
+# 4. Set ENVIRONMENT variable (all other env-specific values auto-computed)
+export ENVIRONMENT=local
+# Note: DATABASE_NAME, REDIS_DB, TEMPORAL_TASK_QUEUE, QDRANT_COLLECTION_PREFIX,
+#       and MINIO_BUCKET_PREFIX are automatically computed based on ENVIRONMENT
 
 # 5. Run database migrations
 uv run alembic upgrade head
@@ -471,7 +491,7 @@ docker compose -f docker-compose.base.yml -f docker-compose.app.prod.yml up -d -
 
 ```bash
 # Create new migration (LOCAL)
-export DATABASE_NAME=shia_chatbot_local
+export ENVIRONMENT=local  # Database name auto-computed as shia_chatbot_local
 uv run alembic revision --autogenerate -m "add new table"
 
 # Run migrations (LOCAL)

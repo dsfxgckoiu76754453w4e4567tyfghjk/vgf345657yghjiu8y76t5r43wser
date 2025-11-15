@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # Temporal Workflow Engine
     temporal_host: str = Field(default="localhost:7233")
     temporal_namespace: str = Field(default="default")
-    temporal_task_queue: str = Field(default="wisqu-local-queue")  # Environment-specific
+    temporal_task_queue: str = Field(default="wisqu-queue")  # Base name - environment auto-inserted
     temporal_enabled: bool = Field(default=True)  # Enable for workflow orchestration
     
 
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     database_port: int = Field(default=5433)
     database_user: str = Field(default="postgres")
     database_password: str = Field(default="postgres")
-    database_name: str = Field(default="shia_chatbot_local")  # Environment-specific
+    database_name: str = Field(default="shia_chatbot")  # Base name - environment auto-appended
     database_driver: str = Field(default="postgresql+asyncpg")
     database_pool_size: int = Field(default=20)
     database_max_overflow: int = Field(default=10)
@@ -52,15 +52,17 @@ class Settings(BaseSettings):
     # Note: Individual parameters are always used to build the connection URL
     # This ensures better security and configuration management
 
-    # Redis (Single dedicated DB per environment)
-    # Logical order: LOCAL: DB 0, DEV: DB 1, STAGE: DB 2, PROD: DB 3
-    redis_url: str = Field(default="redis://localhost:6379/0")
+    # Redis (Environment-specific DB auto-selected: 0=local, 1=dev, 2=stage, 3=prod)
+    redis_host: str = Field(default="localhost")
+    redis_port: int = Field(default=6379)
+    redis_password: str | None = Field(default=None)
+    redis_db: int | None = Field(default=None)  # Auto-computed from environment if None
 
     # Qdrant
     qdrant_url: str = Field(default="http://localhost:6333")
     qdrant_api_key: str | None = Field(default=None)
     qdrant_collection_name: str = Field(default="islamic_knowledge")
-    qdrant_collection_prefix: str = Field(default="local_")  # Environment prefix: local_, dev_, stage_, prod_
+    # Note: qdrant_collection_prefix is auto-computed from environment
 
     # JWT & Security
     jwt_secret_key: str = Field(default="change-in-production")
@@ -236,7 +238,7 @@ class Settings(BaseSettings):
     minio_secure: bool = Field(default=False)  # True for HTTPS
     minio_region: str = Field(default="us-east-1")
     minio_public_url: str = Field(default="http://localhost:9000")  # For public URLs
-    minio_bucket_prefix: str = Field(default="local-")  # Environment prefix: local-, dev-, stage-, prod-
+    # Note: minio_bucket_prefix is auto-computed from environment (local-, dev-, stage-, prod-)
 
     # MinIO Bucket Names
     minio_bucket_images: str = Field(default="wisqu-images")  # AI-generated images (public)
@@ -464,7 +466,7 @@ class Settings(BaseSettings):
         Returns:
             str: Complete database URL
         """
-        db_name = database_name if database_name is not None else self.database_name
+        db_name = database_name if database_name is not None else self.database_name_with_env
         return (
             f"{self.database_driver}://{self.database_user}:{self.database_password}"
             f"@{self.database_host}:{self.database_port}/{db_name}"
@@ -475,11 +477,12 @@ class Settings(BaseSettings):
         """
         Get the database URL as a computed property.
 
+        Automatically uses environment-specific database name (e.g., shia_chatbot_local).
         This ensures the URL is always constructed from individual parameters,
         preventing environment variable override issues.
 
         Returns:
-            str: Complete database URL
+            str: Complete database URL with environment-specific database name
         """
         return self.get_database_url()
 
@@ -507,6 +510,88 @@ class Settings(BaseSettings):
     def show_docs(self) -> bool:
         """Whether to show API documentation endpoints."""
         return self.debug or self.environment != "prod"
+
+    # ========================================================================
+    # Auto-Computed Environment-Specific Properties
+    # ========================================================================
+
+    @property
+    def redis_url(self) -> str:
+        """
+        Auto-build Redis URL with environment-specific DB.
+
+        Automatically selects correct Redis DB based on environment:
+        - local: 0, dev: 1, stage: 2, prod: 3
+
+        Returns:
+            str: Complete Redis URL
+        """
+        db = self.redis_db if self.redis_db is not None else self.get_redis_db("default")
+        auth = f":{self.redis_password}@" if self.redis_password else ""
+        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{db}"
+
+    @property
+    def database_name_with_env(self) -> str:
+        """
+        Auto-append environment to database name.
+
+        Examples:
+            >>> settings.database_name_with_env
+            "shia_chatbot_local"  # In local environment
+            "shia_chatbot_dev"    # In dev environment
+            "shia_chatbot_prod"   # In prod environment
+
+        Returns:
+            str: Database name with environment suffix
+        """
+        return f"{self.database_name}_{self.environment}"
+
+    @property
+    def temporal_task_queue_with_env(self) -> str:
+        """
+        Auto-insert environment into Temporal task queue name.
+
+        Examples:
+            >>> settings.temporal_task_queue_with_env
+            "wisqu-local-queue"  # In local environment
+            "wisqu-dev-queue"    # In dev environment
+
+        Returns:
+            str: Temporal queue name with environment
+        """
+        # Extract base and suffix, insert environment
+        base = self.temporal_task_queue.replace("-queue", "")
+        return f"{base}-{self.environment}-queue"
+
+    @property
+    def qdrant_collection_prefix(self) -> str:
+        """
+        Auto-compute Qdrant collection prefix from environment.
+
+        Examples:
+            >>> settings.qdrant_collection_prefix
+            "local_"  # In local environment
+            "dev_"    # In dev environment
+
+        Returns:
+            str: Environment-specific collection prefix
+        """
+        return f"{self.environment}_"
+
+    @property
+    def minio_bucket_prefix(self) -> str:
+        """
+        Auto-compute MinIO bucket prefix from environment.
+
+        Examples:
+            >>> settings.minio_bucket_prefix
+            "local-"  # In local environment
+            "dev-"    # In dev environment
+
+        Returns:
+            str: Environment-specific bucket prefix
+        """
+        return f"{self.environment}-"
 
     # ========================================================================
     # Environment Resource Naming Helpers
